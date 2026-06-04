@@ -139,7 +139,7 @@ export function WebSurfaceView({ data }: { data: WebSurfaceData }) {
                     <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
                       {h.recommendation || 'This security header is essential for protecting the application from common web attacks like XSS, Clickjacking, or MIME sniffing.'}
                     </p>
-                    {h.url && <p className="text-[10px] text-primary/60 truncate italic mt-1">Source: {url}</p>}
+                    {h.url && <p className="text-[10px] text-primary/60 truncate italic mt-1">Source: {h.url}</p>}
                   </div>
                 </div>
               ))}
