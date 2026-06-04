@@ -9,7 +9,7 @@ CypherRecon is een enterprise-grade dashboard voor het beheren van multi-target 
 - Installeer **Subfinder** voor echte subdomain discovery.
 - Installeer Python afhankelijkheden:
   ```bash
-  pip install fastapi uvicorn pydantic httpx playwright
+  pip install fastapi uvicorn pydantic httpx playwright beautifulsoup4
   playwright install chromium
   ```
 - **API Key**: Haal een gratis API-key op via [Google AI Studio](https://aistudio.google.com/app/apikey) en zet deze in het `.env` bestand in de hoofdmap van dit project:
@@ -26,6 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
 
 app = FastAPI()
 
@@ -80,7 +82,7 @@ def add_group(g: GroupCreate):
             "host": host,
             "status": "idle",
             "progress": 0,
-            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None}
+            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None}
         })
     
     group = {
@@ -107,7 +109,7 @@ def run_group_scan(id: str, background_tasks: BackgroundTasks):
         for child in group["childTargets"]:
             child["status"] = "running"
             child["progress"] = 0
-            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None}
+            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None}
         
         background_tasks.add_task(execute_group_workflow, id)
         return {"status": "started"}
@@ -140,10 +142,11 @@ def delete_group(id: str):
 async def execute_group_workflow(group_id: str):
     group = db["groups"][group_id]
     
-    for child in group["childTargets"]:
+    for i, child in enumerate(group["childTargets"]):
         if group_id in db["stop_flags"]:
             break
         await execute_single_target(group, child, group_id)
+        group["progress"] = int(((i + 1) / len(group["childTargets"])) * 100)
         
     if group_id in db["stop_flags"]:
         group["status"] = "failed"
@@ -230,18 +233,18 @@ async def execute_single_target(group, child, group_id):
                         parts = line.split()
                         if len(parts) >= 3:
                             p_val = int(parts[0].split('/')[0])
-                            service = parts[2]
+                            service = parts[2].lower()
                             ports_results.append({
                                 "port": p_val, "service": service, "state": parts[1], 
                                 "version": " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
                             })
-                            if p_val in [80, 443, 8080, 8443] or service in ["http", "https"]:
+                            if p_val in [80, 443, 8080, 8443] or "http" in service:
                                 web_ports.append(p_val)
-                            if p_val == 443 or service == "https":
+                            if p_val == 443 or "ssl" in service or "https" in service:
                                 tls_ports.append(p_val)
                 child["results"]["portScanResults"] = ports_results
                 log(f"Service analysis complete. {len(found_ports)} ports analyzed.", "success")
-            child["progress"] = 40
+            child["progress"] = 30
         else:
             # Fallback if port scanning is disabled
             web_ports = [80, 443, 8080]
@@ -281,25 +284,86 @@ async def execute_single_target(group, child, group_id):
                     except: pass
             child["results"]["webSurface"] = results
             log("Web surface analysis complete.", "success")
-            child["progress"] = 60
+            child["progress"] = 50
 
         # Phase 4: SSL/TLS
         if modules.get("tls_analysis") and not is_stopped():
             child["activeModule"] = "tls_analysis"
             log("Phase 4: TLS Verification...")
             tls_results = {"ports_used": tls_ports, "versions": [], "ciphers": [], "summary": {"supported_versions": 0, "insecure_versions": 0, "weak_ciphers": 0, "insecure_ciphers": 0}}
-            
-            # Simple check for TLS 1.2
             tls_results["versions"].append({"version": "TLS 1.2", "supported": True, "cipher": "ECDHE-RSA-AES256-GCM-SHA384", "severity": "none"})
             tls_results["summary"]["supported_versions"] = 1
             child["results"]["tlsData"] = tls_results
             log("TLS analysis complete.", "success")
-            child["progress"] = 80
+            child["progress"] = 65
 
-        # Phase 5: Screenshot
+        # Phase 5: URL Harvesting
+        if modules.get("url_harvesting") and not is_stopped():
+            child["activeModule"] = "url_harvesting"
+            log("Phase 5: Harvesting URLs...")
+            harvested = []
+            seen_urls = set()
+            headers, _ = build_http_context()
+            
+            async def add_url(url, source):
+                norm = url.split('#')[0].rstrip('/')
+                if norm and norm not in seen_urls and norm.startswith(('http://', 'https://', '/')):
+                    seen_urls.add(norm)
+                    full_url = urljoin(f"http://{host}", url) if url.startswith('/') else url
+                    
+                    # Heuristic type
+                    utype = 'page'
+                    interesting = False
+                    path = urlparse(full_url).path.lower()
+                    
+                    if any(x in path for x in ['api', 'v1', 'v2', 'json', 'graphql']): utype = 'api'; interesting = True
+                    if any(x in path for x in ['admin', 'login', 'auth', 'sign-in', 'portal']): utype = 'admin'; interesting = True
+                    if any(x in path for x in ['.js', '.css', '.png', '.jpg', '.svg', '.pdf']): utype = 'static'
+                    if any(x in path for x in ['backup', 'config', 'setup', 'internal', 'staging', 'dev']): interesting = True
+                    
+                    harvested.append({
+                        "url": full_url,
+                        "source": source,
+                        "type": utype,
+                        "interesting": interesting
+                    })
+
+            async with httpx.AsyncClient(headers=headers, verify=False, timeout=5, follow_redirects=True) as client:
+                # 1. robots.txt
+                try:
+                    r = await client.get(f"http://{host}/robots.txt")
+                    if r.status_code == 200:
+                        for line in r.text.split('\n'):
+                            if any(line.startswith(x) for x in ['Allow:', 'Disallow:', 'Sitemap:']):
+                                parts = line.split(':')
+                                if len(parts) > 1: await add_url(parts[1].strip(), 'robots')
+                except: pass
+
+                # 2. Main Page Crawl
+                try:
+                    r = await client.get(f"http://{host}/")
+                    if r.status_code == 200:
+                        soup = BeautifulSoup(r.text, 'html.parser')
+                        for a in soup.find_all('a', href=True): await add_url(a['href'], 'html')
+                        for s in soup.find_all(['script', 'img', 'link'], src=True): await add_url(s['src'], 'html')
+                except: pass
+
+            child["results"]["urlHarvesting"] = {
+                "urls": harvested,
+                "summary": {
+                    "found": len(harvested),
+                    "unique": len(seen_urls),
+                    "interesting": len([u for u in harvested if u['interesting']]),
+                    "api_endpoints": len([u for u in harvested if u['type'] == 'api'])
+                }
+            }
+            log(f"URL Harvesting complete. Found {len(harvested)} links.", "success")
+            child["progress"] = 85
+
+        # Phase 6: Screenshot
         if modules.get("screenshotting") and not is_stopped():
             child["activeModule"] = "screenshotting"
-            log("Phase 5: Capturing Snapshot...")
+            log("Phase 6: Capturing Snapshot...")
             headers, cookies = build_http_context()
             async with async_playwright() as p:
                 try:
@@ -307,7 +371,6 @@ async def execute_single_target(group, child, group_id):
                     context = await browser.new_context(extra_http_headers=headers)
                     if cookies: await context.add_cookies(cookies)
                     page = await context.new_page()
-                    # Try HTTPS first, then HTTP
                     try:
                         await page.goto(f"https://{host}", timeout=15000)
                     except:

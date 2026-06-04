@@ -35,7 +35,8 @@ export type ReconModuleType =
   | 'api_discovery' 
   | 'screenshotting'
   | 'web_surface_scan'
-  | 'tls_analysis';
+  | 'tls_analysis'
+  | 'url_harvesting';
 
 export interface OsintFinding {
   label: string;
@@ -90,6 +91,24 @@ export interface TLSData {
   };
 }
 
+export interface HarvestedURL {
+  url: string;
+  source: 'robots' | 'sitemap' | 'html' | 'js' | 'header';
+  type: 'page' | 'api' | 'admin' | 'static' | 'other';
+  status?: number;
+  interesting: boolean;
+}
+
+export interface URLHarvestingData {
+  urls: HarvestedURL[];
+  summary: {
+    found: number;
+    unique: number;
+    interesting: number;
+    api_endpoints: number;
+  };
+}
+
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
@@ -100,6 +119,7 @@ export interface ScanResults {
   screenshots?: string[];
   webSurface?: WebSurfaceData;
   tlsData?: TLSData;
+  urlHarvesting?: URLHarvestingData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 

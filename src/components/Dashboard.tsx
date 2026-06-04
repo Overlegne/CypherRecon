@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useScannerStore } from '@/lib/scanner-store';
-import { TargetGroup, ReconMode, ReconModuleType, Credential, CredentialType, ChildTarget } from '@/lib/types';
+import { TargetGroup, ReconMode, ReconModuleType, Credential, CredentialType, ChildTarget, ScanStatus } from '@/lib/types';
 import { 
   Plus, 
   Terminal, 
@@ -36,7 +36,8 @@ import {
   Layers,
   KeyRound,
   MoreVertical,
-  ChevronDown
+  ChevronDown,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -57,6 +58,7 @@ import { ModuleConfig } from './ModuleConfig';
 import { RiskAnalysisView } from './RiskAnalysisView';
 import { WebSurfaceView } from './WebSurfaceView';
 import { TLSAnalysisView } from './TLSAnalysisView';
+import { URLHarvestingView } from './URLHarvestingView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -79,6 +81,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   screenshotting: true,
   web_surface_scan: true,
   tls_analysis: true,
+  url_harvesting: true,
 };
 
 export default function Dashboard() {
@@ -168,15 +171,6 @@ export default function Dashboard() {
       case 'completed': return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Complete</Badge>;
       case 'failed': return <Badge variant="destructive">Failed / Stopped</Badge>;
       default: return <Badge variant="outline">Idle</Badge>;
-    }
-  };
-
-  const getOsintIcon = (type: string) => {
-    switch (type) {
-      case 'code': return <Code className="text-blue-400" size={18} />;
-      case 'social': return <Users className="text-purple-400" size={18} />;
-      case 'leak': return <AlertTriangle className="text-red-400" size={18} />;
-      default: return <Unplug className="text-yellow-500" size={18} />;
     }
   };
 
@@ -279,13 +273,6 @@ export default function Dashboard() {
                       </Button>
                     </div>
 
-                    {credentials.length === 0 && (
-                      <div className="text-center py-8 border-2 border-dashed border-border rounded-xl opacity-50">
-                        <Key size={32} className="mx-auto mb-2 text-muted-foreground" />
-                        <p className="text-sm">No credentials added for this Greybox target group.</p>
-                      </div>
-                    )}
-
                     <div className="grid grid-cols-1 gap-4">
                       {credentials.map((cred) => (
                         <Card key={cred.id} className="border-border/60 bg-card/40">
@@ -320,12 +307,7 @@ export default function Dashboard() {
                                   </SelectContent>
                                 </Select>
                               </div>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="mt-5 h-8 w-8 text-destructive" 
-                                onClick={() => removeCredential(cred.id)}
-                              >
+                              <Button variant="ghost" size="icon" className="mt-5 h-8 w-8 text-destructive" onClick={() => removeCredential(cred.id)}>
                                 <XCircle size={16} />
                               </Button>
                             </div>
@@ -334,64 +316,25 @@ export default function Dashboard() {
                               {(cred.type === 'custom_header' || cred.type === 'api_key') && (
                                 <div className="space-y-1">
                                   <Label className="text-[10px] uppercase font-bold text-muted-foreground">Header Name</Label>
-                                  <Input 
-                                    className="h-8 text-sm"
-                                    placeholder="X-API-Key" 
-                                    value={cred.headerName || ''} 
-                                    onChange={(e) => updateCredential(cred.id, { headerName: e.target.value || '' })}
-                                  />
+                                  <Input className="h-8 text-sm" placeholder="X-API-Key" value={cred.headerName || ''} onChange={(e) => updateCredential(cred.id, { headerName: e.target.value })} />
                                 </div>
                               )}
                               {(cred.type === 'username_password' || cred.type === 'basic_auth') && (
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Username</Label>
-                                  <Input 
-                                    className="h-8 text-sm"
-                                    value={cred.username || ''} 
-                                    onChange={(e) => updateCredential(cred.id, { username: e.target.value || '' })}
-                                  />
-                                </div>
-                              )}
-                              {(cred.type === 'username_password' || cred.type === 'basic_auth') && (
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Password</Label>
-                                  <div className="relative">
-                                    <Input 
-                                      type={showSecrets[cred.id] ? "text" : "password"}
-                                      className="h-8 text-sm pr-8"
-                                      value={cred.password || ''} 
-                                      onChange={(e) => updateCredential(cred.id, { password: e.target.value || '' })}
-                                    />
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="absolute right-0 top-0 h-8 w-8" 
-                                      onClick={() => toggleSecret(cred.id)}
-                                    >
-                                      {showSecrets[cred.id] ? <EyeOff size={12} /> : <Eye size={12} />}
-                                    </Button>
+                                <>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Username</Label>
+                                    <Input className="h-8 text-sm" value={cred.username || ''} onChange={(e) => updateCredential(cred.id, { username: e.target.value })} />
                                   </div>
-                                </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Password</Label>
+                                    <Input type="password" className="h-8 text-sm" value={cred.password || ''} onChange={(e) => updateCredential(cred.id, { password: e.target.value })} />
+                                  </div>
+                                </>
                               )}
                               {cred.type !== 'username_password' && (
                                 <div className="col-span-2 space-y-1">
                                   <Label className="text-[10px] uppercase font-bold text-muted-foreground">Value / Secret</Label>
-                                  <div className="relative">
-                                    <Input 
-                                      type={showSecrets[cred.id] ? "text" : "password"}
-                                      className="h-8 text-sm pr-8"
-                                      value={cred.value || ''} 
-                                      onChange={(e) => updateCredential(cred.id, { value: e.target.value || '' })}
-                                    />
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="absolute right-0 top-0 h-8 w-8" 
-                                      onClick={() => toggleSecret(cred.id)}
-                                    >
-                                      {showSecrets[cred.id] ? <EyeOff size={12} /> : <Eye size={12} />}
-                                    </Button>
-                                  </div>
+                                  <Input type="password" className="h-8 text-sm" value={cred.value || ''} onChange={(e) => updateCredential(cred.id, { value: e.target.value })} />
                                 </div>
                               )}
                             </div>
@@ -411,10 +354,7 @@ export default function Dashboard() {
                             <Label className="text-sm font-medium capitalize">{key.replace(/_/g, ' ')}</Label>
                             <p className="text-[10px] text-muted-foreground">Enable specialized discovery for this component.</p>
                           </div>
-                          <Switch 
-                            checked={selectedModules[key]} 
-                            onCheckedChange={() => toggleModuleSelection(key)} 
-                          />
+                          <Switch checked={selectedModules[key]} onCheckedChange={() => toggleModuleSelection(key)} />
                         </div>
                       ))}
                     </div>
@@ -431,12 +371,6 @@ export default function Dashboard() {
 
         <ScrollArea className="flex-1 px-3">
           <div className="space-y-2">
-            {groups.length === 0 && (
-              <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground opacity-40">
-                <Globe size={40} className="mb-2" />
-                <p className="text-sm">No target groups yet</p>
-              </div>
-            )}
             {groups.map(group => (
               <div 
                 key={group.id}
@@ -455,34 +389,23 @@ export default function Dashboard() {
                     <h3 className="font-bold text-sm truncate pr-2">{group.name}</h3>
                     <p className="text-[10px] text-muted-foreground truncate">{group.childTargets.length} targets</p>
                   </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
-                    >
-                      <Trash2 size={12} />
-                    </Button>
-                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                    onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
+                  >
+                    <Trash2 size={12} />
+                  </Button>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
-                   <Badge variant="outline" className={`text-[10px] uppercase font-bold py-0 h-4 border-muted-foreground/30 ${group.mode === 'greybox' ? 'bg-accent/10 text-accent border-accent/20' : ''}`}>
+                   <Badge variant="outline" className={`text-[10px] uppercase font-bold py-0 h-4 ${group.mode === 'greybox' ? 'bg-accent/10 text-accent border-accent/20' : ''}`}>
                     {group.mode}
                    </Badge>
                    <span className="text-[10px] text-muted-foreground">
                     {group.lastRunAt ? formatDistanceToNow(group.lastRunAt, { addSuffix: true }) : 'Never run'}
                    </span>
                 </div>
-                {group.status === 'running' && (
-                  <div className="mt-3 space-y-1">
-                    <Progress value={group.progress} className="h-1" />
-                    <div className="flex items-center justify-between text-[8px] uppercase tracking-widest text-primary font-bold">
-                      <span>RUNNING</span>
-                      <span>{group.progress}%</span>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -514,34 +437,22 @@ export default function Dashboard() {
                   <span className={`flex items-center gap-1.5 ${selectedGroup.mode === 'greybox' ? 'text-accent font-bold' : ''}`}>
                     {selectedGroup.mode === 'greybox' ? <Lock size={14} /> : <Settings2 size={14} />} 
                     {selectedGroup.mode} Mode
-                    {selectedGroup.mode === 'greybox' && ` (${selectedGroup.credentials?.length || 0} Credentials)`}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 {selectedGroup.status === 'running' ? (
-                  <Button 
-                    variant="destructive"
-                    onClick={() => stopScan(selectedGroup.id)}
-                    className="gap-2"
-                  >
-                    <Square size={16} fill="currentColor" />
-                    Stop Group Scan
+                  <Button variant="destructive" onClick={() => stopScan(selectedGroup.id)} className="gap-2">
+                    <Square size={16} fill="currentColor" /> Stop Group Scan
                   </Button>
                 ) : (
-                  <Button 
-                    onClick={() => runScan(selectedGroup.id)} 
-                    disabled={!isBackendConnected}
-                    className={`gap-2 ${isBackendConnected ? 'bg-accent text-white hover:bg-accent/90' : 'bg-muted text-muted-foreground'}`}
-                  >
-                    <Play size={18} />
-                    {selectedGroup.status === 'completed' || selectedGroup.status === 'failed' ? 'Restart Group Scan' : 'Start Group Scan'}
+                  <Button onClick={() => runScan(selectedGroup.id)} disabled={!isBackendConnected} className="gap-2">
+                    <Play size={18} /> Start Group Scan
                   </Button>
                 )}
               </div>
             </header>
 
-            {/* Child Target Selection Bar */}
             <div className="px-6 py-2 border-b border-border bg-secondary/20 flex items-center gap-2 overflow-x-auto no-scrollbar">
               <span className="text-[10px] font-bold text-muted-foreground uppercase mr-2 whitespace-nowrap">Selected Target:</span>
               {selectedGroup.childTargets.map(child => (
@@ -551,7 +462,7 @@ export default function Dashboard() {
                   className={cn(
                     "px-3 py-1.5 rounded-full text-xs transition-all whitespace-nowrap flex items-center gap-2 border",
                     selectedChildId === child.id 
-                    ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" 
+                    ? "bg-primary text-white border-primary shadow-lg" 
                     : "bg-background/50 hover:bg-background border-transparent text-muted-foreground"
                   )}
                 >
@@ -569,54 +480,24 @@ export default function Dashboard() {
                     <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
                     <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
                     <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
+                    <TabsTrigger value="harvesting" className="gap-2"><LinkIcon size={14} /> URL Harvesting</TabsTrigger>
                     <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
                     <TabsTrigger value="tls" className="gap-2"><KeyRound size={14} /> SSL/TLS</TabsTrigger>
                     <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                     <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
-                    <TabsTrigger value="report" className="gap-2" disabled={!selectedChild.results?.riskAnalysis}><FileText size={14} /> Risk Analysis</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="overview" className="mt-6 space-y-6">
                     {selectedChild.status === 'idle' && (
-                      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                        <div className="p-6 rounded-full bg-primary/5 border border-primary/10">
-                          {selectedGroup.mode === 'greybox' ? <Lock size={48} className="text-accent opacity-50" /> : <Globe size={48} className="text-primary opacity-50" />}
-                        </div>
-                        <div className="max-w-md">
-                          <h3 className="text-xl font-bold mb-2">Ready to initiate reconnaissance for {selectedChild.host}</h3>
-                          <p className="text-muted-foreground mb-6">
-                            Part of target group: <strong>{selectedGroup.name}</strong>
-                          </p>
-                          <Button 
-                            onClick={() => runScan(selectedGroup.id)} 
-                            size="lg" 
-                            className="gap-2"
-                            disabled={!isBackendConnected}
-                          >
-                            Start Group Execution <ArrowRight size={18} />
-                          </Button>
-                        </div>
+                      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 opacity-50">
+                        <Globe size={48} />
+                        <h3 className="text-xl font-bold">Awaiting Scan Initiation</h3>
+                        <p className="text-sm">Start the group run to see results for {selectedChild.host}.</p>
                       </div>
                     )}
-
                     {selectedChild.status !== 'idle' && (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="space-y-6">
-                          <div className="p-6 rounded-xl border border-border bg-card/50">
-                            <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Finding Summary: {selectedChild.host}</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
-                                <span className="block text-2xl font-bold font-code">{selectedChild.results?.subdomains?.length || 0}</span>
-                                <span className="text-xs text-muted-foreground uppercase">Subdomains</span>
-                              </div>
-                              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
-                                <span className="block text-2xl font-bold font-code">{selectedChild.results?.portScanResults?.length || 0}</span>
-                                <span className="text-xs text-muted-foreground uppercase">Active Ports</span>
-                              </div>
-                            </div>
-                          </div>
-                          <TerminalLogs logs={selectedChild.results?.logs || []} />
-                        </div>
+                        <TerminalLogs logs={selectedChild.results?.logs || []} />
                         <div className="space-y-6">
                           {selectedChild.results?.riskAnalysis && (
                              <div className="p-6 rounded-xl border border-primary/30 bg-primary/5">
@@ -625,24 +506,21 @@ export default function Dashboard() {
                                  <span className="text-4xl font-bold font-code text-primary">{selectedChild.results.riskAnalysis.riskScore}</span>
                                </div>
                                <Progress value={selectedChild.results.riskAnalysis.riskScore} className="h-2 mb-4" />
-                               <p className="text-xs text-muted-foreground leading-relaxed">
-                                 {selectedChild.results.riskAnalysis.riskSummary}
-                               </p>
+                               <p className="text-xs text-muted-foreground leading-relaxed">{selectedChild.results.riskAnalysis.riskSummary}</p>
                              </div>
                           )}
                           <Card className="bg-secondary/10 border-border/50">
                             <CardContent className="p-4">
-                              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Group Progress</h4>
-                              <div className="space-y-4">
-                                {selectedGroup.childTargets.map(child => (
-                                  <div key={child.id} className="space-y-1">
-                                    <div className="flex items-center justify-between text-[10px]">
-                                      <span className="font-medium truncate max-w-[120px]">{child.host}</span>
-                                      <span className="text-muted-foreground">{child.progress}%</span>
-                                    </div>
-                                    <Progress value={child.progress} className="h-0.5" />
-                                  </div>
-                                ))}
+                              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Target Stats</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="p-3 rounded bg-background/50 border border-border">
+                                  <span className="block text-xl font-bold font-code">{selectedChild.results?.subdomains?.length || 0}</span>
+                                  <span className="text-[10px] text-muted-foreground">SUBDOMAINS</span>
+                                </div>
+                                <div className="p-3 rounded bg-background/50 border border-border">
+                                  <span className="block text-xl font-bold font-code">{selectedChild.results?.portScanResults?.length || 0}</span>
+                                  <span className="text-[10px] text-muted-foreground">PORTS</span>
+                                </div>
                               </div>
                             </CardContent>
                           </Card>
@@ -654,32 +532,16 @@ export default function Dashboard() {
                   <TabsContent value="network" className="mt-6 space-y-6">
                     {selectedChild.results?.portScanResults?.length ? (
                       <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg flex items-center gap-2">
-                            <Network size={20} className="text-primary" />
-                            Active Services: {selectedChild.host}
-                          </CardTitle>
-                        </CardHeader>
+                        <CardHeader><CardTitle className="text-lg">Services</CardTitle></CardHeader>
                         <CardContent>
                           <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Port</TableHead>
-                                <TableHead>Service</TableHead>
-                                <TableHead>State</TableHead>
-                                <TableHead>Version Info</TableHead>
-                              </TableRow>
-                            </TableHeader>
+                            <TableHeader><TableRow><TableHead>Port</TableHead><TableHead>Service</TableHead><TableHead>State</TableHead><TableHead>Version</TableHead></TableRow></TableHeader>
                             <TableBody>
-                              {selectedChild.results?.portScanResults?.map((res, i) => (
+                              {selectedChild.results.portScanResults.map((res, i) => (
                                 <TableRow key={i}>
-                                  <TableCell className="font-code font-bold text-primary">{res.port}</TableCell>
+                                  <TableCell className="font-code text-primary">{res.port}</TableCell>
                                   <TableCell className="capitalize">{res.service}</TableCell>
-                                  <TableCell>
-                                    <Badge variant={res.state === 'open' ? 'default' : 'outline'} className={res.state === 'open' ? 'bg-green-500 hover:bg-green-600' : ''}>
-                                      {res.state}
-                                    </Badge>
-                                  </TableCell>
+                                  <TableCell><Badge variant={res.state === 'open' ? 'default' : 'outline'}>{res.state}</Badge></TableCell>
                                   <TableCell className="text-muted-foreground font-code text-xs">{res.version || 'Unknown'}</TableCell>
                                 </TableRow>
                               ))}
@@ -687,97 +549,34 @@ export default function Dashboard() {
                           </Table>
                         </CardContent>
                       </Card>
-                    ) : (
-                      <div className="py-20 text-center opacity-40">No network data yet.</div>
-                    )}
+                    ) : <div className="py-20 text-center opacity-40">No network data yet.</div>}
                   </TabsContent>
 
-                  <TabsContent value="discovery" className="mt-6 space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Subdomains: {selectedChild.host}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {selectedChild.results?.subdomains?.length ? selectedChild.results.subdomains.map((sub, i) => (
-                              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border">
-                                <span className="font-code text-sm">{sub}</span>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`https://${sub}`, '_blank')}>
-                                  <Globe size={14} />
-                                </Button>
-                              </div>
-                            )) : <p className="text-xs text-muted-foreground italic">No subdomains discovered.</p>}
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Public Findings</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-4">
-                            {selectedChild.results?.osintData?.length ? selectedChild.results.osintData.map((finding, i) => (
-                              <div key={i} className="flex flex-col gap-3 p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5">
-                                <div className="flex items-start justify-between">
-                                  <div className="flex gap-3">
-                                    <div className="mt-0.5">{getOsintIcon(finding.type)}</div>
-                                    <div className="space-y-1">
-                                      <h4 className="text-sm font-bold flex items-center gap-2">
-                                        {finding.label}
-                                      </h4>
-                                      <p className="text-xs text-muted-foreground leading-relaxed">
-                                        {finding.description}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )) : <p className="text-xs text-muted-foreground italic">No OSINT data available.</p>}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
+                  <TabsContent value="harvesting" className="mt-6">
+                    {selectedChild.results?.urlHarvesting ? (
+                      <URLHarvestingView data={selectedChild.results.urlHarvesting} />
+                    ) : <div className="py-20 text-center opacity-40">No URL data harvested yet.</div>}
                   </TabsContent>
 
-                  <TabsContent value="surface" className="mt-6 space-y-6">
+                  <TabsContent value="surface" className="mt-6">
                     {selectedChild.results?.webSurface ? (
                       <WebSurfaceView data={selectedChild.results.webSurface} />
-                    ) : (
-                      <div className="py-20 text-center opacity-40">Awaiting Web Surface scan...</div>
-                    )}
+                    ) : <div className="py-20 text-center opacity-40">Awaiting Web Surface scan...</div>}
                   </TabsContent>
 
-                  <TabsContent value="tls" className="mt-6 space-y-6">
+                  <TabsContent value="tls" className="mt-6">
                     {selectedChild.results?.tlsData ? (
                       <TLSAnalysisView data={selectedChild.results.tlsData} />
-                    ) : (
-                      <div className="py-20 text-center opacity-40">Awaiting SSL/TLS scan...</div>
-                    )}
+                    ) : <div className="py-20 text-center opacity-40">Awaiting SSL/TLS scan...</div>}
                   </TabsContent>
 
                   <TabsContent value="snapshots" className="mt-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {selectedChild.results?.screenshots?.length ? selectedChild.results.screenshots.map((url, i) => (
-                        <Card key={i} className="overflow-hidden group">
-                          <div className="relative aspect-video bg-black/50">
-                            <Image 
-                              src={url} 
-                              alt={`Snapshot ${i + 1}`} 
-                              fill 
-                              className="object-cover transition-transform group-hover:scale-105"
-                            />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Button variant="outline" size="sm" className="gap-2 bg-background/50 backdrop-blur" onClick={() => window.open(url, '_blank')}>
-                                <Maximize2 size={14} /> View Fullsize
-                              </Button>
-                            </div>
-                          </div>
+                      {selectedChild.results?.screenshots?.map((url, i) => (
+                        <Card key={i} className="overflow-hidden bg-black/50 aspect-video relative">
+                          <Image src={url} alt={`Snapshot ${i + 1}`} fill className="object-cover" />
                         </Card>
-                      )) : (
-                        <div className="col-span-full py-20 text-center opacity-40">No snapshots captured.</div>
-                      )}
+                      ))}
                     </div>
                   </TabsContent>
 
@@ -785,12 +584,6 @@ export default function Dashboard() {
                     <div className="h-[calc(100vh-320px)]">
                       <TerminalLogs logs={selectedChild.results?.logs || []} />
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="report" className="mt-6">
-                    {selectedChild.results?.riskAnalysis && (
-                      <RiskAnalysisView data={selectedChild.results.riskAnalysis} />
-                    )}
                   </TabsContent>
                 </Tabs>
               ) : (
@@ -800,16 +593,9 @@ export default function Dashboard() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
-             <div className="relative mb-8">
-               <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
-               <div className="relative p-8 rounded-full bg-card border border-border shadow-2xl">
-                 <Shield size={80} className="text-primary" />
-               </div>
-             </div>
-             <h2 className="text-3xl font-headline font-bold mb-4 tracking-tight">CypherRecon Enterprise</h2>
-             <p className="text-muted-foreground max-w-md mb-8 leading-relaxed">
-               Select a target group or create a new multi-target run to begin analysis.
-             </p>
+             <Shield size={80} className="text-primary opacity-20 mb-6" />
+             <h2 className="text-3xl font-bold mb-4">CypherRecon Enterprise</h2>
+             <p className="text-muted-foreground max-w-md">Select a target group or create a new multi-target run to begin analysis.</p>
           </div>
         )}
       </main>
