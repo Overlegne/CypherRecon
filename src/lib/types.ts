@@ -39,7 +39,8 @@ export type ReconModuleType =
   | 'url_harvesting'
   | 'cors_audit'
   | 'cookie_audit'
-  | 'dns_takeover';
+  | 'dns_takeover'
+  | 'js_inventory';
 
 export interface OsintFinding {
   label: string;
@@ -173,6 +174,24 @@ export interface DNSTakeoverData {
   };
 }
 
+export interface JSLibrary {
+  name: string;
+  version: string | null;
+  file: string;
+  confidence: number;
+  status: 'ok' | 'unknown' | 'possibly_outdated' | 'high_risk';
+}
+
+export interface JSLibraryInventoryData {
+  libraries: JSLibrary[];
+  summary: {
+    js_files_tested: number;
+    unique_libraries: number;
+    possibly_outdated: number;
+    high_risk: number;
+  };
+}
+
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
@@ -187,6 +206,7 @@ export interface ScanResults {
   cors_audit?: CORSAuditData;
   cookie_audit?: CookieAuditData;
   dns_takeover?: DNSTakeoverData;
+  js_inventory?: JSLibraryInventoryData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 

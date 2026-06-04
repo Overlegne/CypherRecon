@@ -22,6 +22,10 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
     })),
     summary: z.any()
   }).nullable().optional(),
+  js_inventory: z.object({
+    libraries: z.array(z.any()),
+    summary: z.any()
+  }).nullable().optional(),
   cors_audit: z.any().nullable().optional(),
   cookie_audit: z.any().nullable().optional(),
   dns_takeover: z.any().nullable().optional(),
@@ -67,8 +71,14 @@ const analyzeReconDataAndProvideRiskSummaryPrompt = ai.definePrompt({
 DNS & Subdomain Takeover Analysis:
 - Tested Subdomains: {{dns_takeover.summary.tested}}
 - High Risk Takeover Findings: {{dns_takeover.summary.high_risk}}
-- Suspicious Records: {{dns_takeover.summary.suspicious}}
 - Issues Detected: {{#each dns_takeover.records}}{{#if this.issue}}{{this.subdomain}} ({{this.type}}): {{this.issue}}; {{/if}}{{/each}}
+{{/if}}
+
+{{#if js_inventory}}
+JavaScript Library Inventory:
+- Libraries Found: {{js_inventory.summary.unique_libraries}}
+- Outdated/Risky: {{js_inventory.summary.possibly_outdated}}
+- Details: {{#each js_inventory.libraries}}{{#if this.status}}{{{this.name}}} v{{this.version}} (Status: {{this.status}}); {{/if}}{{/each}}
 {{/if}}
 
 {{#if urlHarvesting}}
@@ -81,32 +91,23 @@ Harvested URLs:
 {{#if webSurface}}
 Web Surface: 
 - Tested: {{webSurface.summary.tested}}
-- OK: {{webSurface.summary.ok}}
-- Missing: {{webSurface.summary.missing}}
-- Weak: {{webSurface.summary.weak}}
+- Missing Headers: {{webSurface.summary.missing}}
+- Weak Policies: {{webSurface.summary.weak}}
 {{/if}}
 
 {{#if tlsData}}
 TLS Analysis:
 - Supported: {{tlsData.summary.supported_versions}}
 - Insecure: {{tlsData.summary.insecure_versions}}
-- Weak Ciphers: {{tlsData.summary.weak_ciphers}}
-{{/if}}
-
-{{#if cors_audit}}
-CORS Audit: 
-- Tested Endpoints: {{cors_audit.summary.tested_endpoints}}
-- High Risk Findings: {{cors_audit.summary.high_risk}}
 {{/if}}
 
 {{#if cookie_audit}}
 Cookie Audit:
 - Cookies Found: {{cookie_audit.summary.cookies_found}}
 - High Risk Issues: {{cookie_audit.summary.high_risk}}
-- Issues Detected: {{#each cookie_audit.cookies}}{{#if this.issue}}{{this.name}}: {{this.issue}}; {{/if}}{{/each}}
 {{/if}}
 
-Identify significant risks. Focus on subdomain takeover (dangling CNAMEs), exposed admin panels, sensitive backup files, unprotected API endpoints, CORS misconfigurations, and insecure cookies.
+Identify significant risks. Focus on outdated JavaScript libraries with known vulnerabilities (DOM-XSS), subdomain takeover (dangling CNAMEs), exposed admin panels, unprotected API endpoints, CORS misconfigurations, and insecure cookies.
 Provide a risk score 0-100 and a list of potential vulnerabilities with recommendations.`,
 });
 
