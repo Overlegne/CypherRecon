@@ -4,6 +4,28 @@ export type ScanStatus = 'idle' | 'pending' | 'running' | 'completed' | 'failed'
 
 export type ReconMode = 'blackbox' | 'greybox';
 
+export type CredentialType = 
+  | 'api_key' 
+  | 'bearer_token' 
+  | 'jwt' 
+  | 'cookie' 
+  | 'username_password' 
+  | 'basic_auth' 
+  | 'custom_header' 
+  | 'query_param';
+
+export interface Credential {
+  id: string;
+  type: CredentialType;
+  label: string;
+  value: string;
+  headerName?: string;
+  username?: string;
+  password?: string;
+  notes?: string;
+  enabled: boolean;
+}
+
 export type ReconModuleType = 
   | 'subdomain_enumeration' 
   | 'osint' 
@@ -30,6 +52,7 @@ export interface Target {
   createdAt: number;
   lastRunAt?: number;
   modules: Record<ReconModuleType, boolean>;
+  credentials?: Credential[];
   results?: ScanResults;
 }
 

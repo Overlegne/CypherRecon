@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useScannerStore } from '@/lib/scanner-store';
-import { Target, ReconMode, ReconModuleType } from '@/lib/types';
+import { Target, ReconMode, ReconModuleType, Credential, CredentialType } from '@/lib/types';
 import { 
   Plus, 
   Terminal, 
@@ -33,7 +33,13 @@ import {
   Camera,
   Maximize2,
   Wifi,
-  WifiOff
+  WifiOff,
+  Key,
+  Lock,
+  PlusCircle,
+  XCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -55,10 +61,12 @@ import { RiskAnalysisView } from './RiskAnalysisView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { SettingsDialog } from './SettingsDialog';
 import { Switch } from './ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Textarea } from './ui/textarea';
 import Image from 'next/image';
 
 const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
@@ -88,15 +96,42 @@ export default function Dashboard() {
   const [newHost, setNewHost] = useState('');
   const [newMode, setNewMode] = useState<ReconMode>('blackbox');
   const [selectedModules, setSelectedModules] = useState<Record<ReconModuleType, boolean>>(INITIAL_MODULES);
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   const selectedTarget = targets.find(t => t.id === selectedTargetId);
 
   const handleAddTarget = () => {
     if (!newHost) return;
-    addTarget(newHost, newMode, selectedModules);
+    addTarget(newHost, newMode, selectedModules, newMode === 'greybox' ? credentials : []);
     setNewHost('');
+    setNewMode('blackbox');
     setSelectedModules(INITIAL_MODULES);
+    setCredentials([]);
     setIsAddOpen(false);
+  };
+
+  const addCredential = () => {
+    const newCred: Credential = {
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'api_key',
+      label: `Credential ${credentials.length + 1}`,
+      value: '',
+      enabled: true
+    };
+    setCredentials([...credentials, newCred]);
+  };
+
+  const updateCredential = (id: string, updates: Partial<Credential>) => {
+    setCredentials(credentials.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
+
+  const removeCredential = (id: string) => {
+    setCredentials(credentials.filter(c => c.id !== id));
+  };
+
+  const toggleSecret = (id: string) => {
+    setShowSecrets(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleModuleSelection = (module: ReconModuleType) => {
@@ -155,17 +190,18 @@ export default function Dashboard() {
                 New Target
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-xl">
+            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
               <DialogHeader>
                 <DialogTitle>Add New Recon Target</DialogTitle>
               </DialogHeader>
-              <Tabs defaultValue="general" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+              <Tabs defaultValue="general" className="w-full flex-1 flex flex-col overflow-hidden">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="general">Target Info</TabsTrigger>
+                  <TabsTrigger value="auth" disabled={newMode !== 'greybox'}>Authentication</TabsTrigger>
                   <TabsTrigger value="modules">Module Pipeline</TabsTrigger>
                 </TabsList>
                 
-                <TabsContent value="general" className="space-y-4 py-4">
+                <TabsContent value="general" className="space-y-4 py-4 overflow-y-auto">
                   <div className="space-y-2">
                     <Label>Domain or IP Address</Label>
                     <Input 
@@ -188,14 +224,150 @@ export default function Dashboard() {
                         <RadioGroupItem value="greybox" id="greybox" />
                         <div className="flex-1">
                           <Label htmlFor="greybox" className="font-semibold block cursor-pointer">Greybox</Label>
-                          <span className="text-[10px] text-muted-foreground">Includes potential credentialed entrypoints and deeper insights.</span>
+                          <span className="text-[10px] text-muted-foreground">Includes authenticated entrypoints and deeper insights.</span>
                         </div>
                       </div>
                     </RadioGroup>
                   </div>
                 </TabsContent>
 
-                <TabsContent value="modules" className="py-4">
+                <TabsContent value="auth" className="py-4 overflow-y-auto flex-1">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold">Greybox Authentication</h4>
+                        <p className="text-xs text-muted-foreground">Add credentials for authenticated scanning and discovery.</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={addCredential} className="gap-2">
+                        <PlusCircle size={14} /> Add Credential
+                      </Button>
+                    </div>
+
+                    {credentials.length === 0 && (
+                      <div className="text-center py-8 border-2 border-dashed border-border rounded-xl opacity-50">
+                        <Key size={32} className="mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm">No credentials added for this Greybox target.</p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4">
+                      {credentials.map((cred) => (
+                        <Card key={cred.id} className="border-border/60 bg-card/40">
+                          <CardContent className="p-4 space-y-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex-1">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Label</Label>
+                                <Input 
+                                  size={1}
+                                  className="h-8 text-sm"
+                                  value={cred.label} 
+                                  onChange={(e) => updateCredential(cred.id, { label: e.target.value })} 
+                                />
+                              </div>
+                              <div className="w-[180px]">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Type</Label>
+                                <Select 
+                                  value={cred.type} 
+                                  onValueChange={(v) => updateCredential(cred.id, { type: v as CredentialType })}
+                                >
+                                  <SelectTrigger className="h-8 text-sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="api_key">API Key</SelectItem>
+                                    <SelectItem value="bearer_token">Bearer Token</SelectItem>
+                                    <SelectItem value="jwt">JWT Token</SelectItem>
+                                    <SelectItem value="cookie">Cookie</SelectItem>
+                                    <SelectItem value="username_password">User/Pass</SelectItem>
+                                    <SelectItem value="basic_auth">Basic Auth</SelectItem>
+                                    <SelectItem value="custom_header">Custom Header</SelectItem>
+                                    <SelectItem value="query_param">Query Param</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="mt-5 h-8 w-8 text-destructive" 
+                                onClick={() => removeCredential(cred.id)}
+                              >
+                                <XCircle size={16} />
+                              </Button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              {(cred.type === 'custom_header' || cred.type === 'api_key') && (
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Header Name</Label>
+                                  <Input 
+                                    className="h-8 text-sm"
+                                    placeholder="X-API-Key" 
+                                    value={cred.headerName} 
+                                    onChange={(e) => updateCredential(cred.id, { headerName: e.target.value })}
+                                  />
+                                </div>
+                              )}
+                              {(cred.type === 'username_password' || cred.type === 'basic_auth') && (
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Username</Label>
+                                  <Input 
+                                    className="h-8 text-sm"
+                                    value={cred.username} 
+                                    onChange={(e) => updateCredential(cred.id, { username: e.target.value })}
+                                  />
+                                </div>
+                              )}
+                              {(cred.type === 'username_password' || cred.type === 'basic_auth') && (
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Password</Label>
+                                  <div className="relative">
+                                    <Input 
+                                      type={showSecrets[cred.id] ? "text" : "password"}
+                                      className="h-8 text-sm pr-8"
+                                      value={cred.password} 
+                                      onChange={(e) => updateCredential(cred.id, { password: e.target.value })}
+                                    />
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="absolute right-0 top-0 h-8 w-8" 
+                                      onClick={() => toggleSecret(cred.id)}
+                                    >
+                                      {showSecrets[cred.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                              {cred.type !== 'username_password' && (
+                                <div className="col-span-2 space-y-1">
+                                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Value / Secret</Label>
+                                  <div className="relative">
+                                    <Input 
+                                      type={showSecrets[cred.id] ? "text" : "password"}
+                                      className="h-8 text-sm pr-8"
+                                      value={cred.value} 
+                                      onChange={(e) => updateCredential(cred.id, { value: e.target.value })}
+                                    />
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="absolute right-0 top-0 h-8 w-8" 
+                                      onClick={() => toggleSecret(cred.id)}
+                                    >
+                                      {showSecrets[cred.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="modules" className="py-4 overflow-y-auto">
                   <ScrollArea className="h-[300px] pr-4">
                     <div className="space-y-3">
                       {(Object.keys(selectedModules) as ReconModuleType[]).map((key) => (
@@ -214,7 +386,7 @@ export default function Dashboard() {
                   </ScrollArea>
                 </TabsContent>
               </Tabs>
-              <DialogFooter>
+              <DialogFooter className="pt-4 border-t border-border">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
                 <Button onClick={handleAddTarget}>Create Sequence</Button>
               </DialogFooter>
@@ -254,7 +426,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                   <Badge variant="outline" className="text-[10px] uppercase font-bold py-0 h-4 border-muted-foreground/30">
+                   <Badge variant="outline" className={`text-[10px] uppercase font-bold py-0 h-4 border-muted-foreground/30 ${target.mode === 'greybox' ? 'bg-accent/10 text-accent border-accent/20' : ''}`}>
                     {target.mode}
                    </Badge>
                    <span className="text-[10px] text-muted-foreground">
@@ -298,7 +470,11 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1.5"><Clock size={14} /> Created {new Date(selectedTarget.createdAt).toLocaleDateString()}</span>
-                  <span className="flex items-center gap-1.5"><Settings2 size={14} /> {selectedTarget.mode} Mode</span>
+                  <span className={`flex items-center gap-1.5 ${selectedTarget.mode === 'greybox' ? 'text-accent font-bold' : ''}`}>
+                    {selectedTarget.mode === 'greybox' ? <Lock size={14} /> : <Settings2 size={14} />} 
+                    {selectedTarget.mode} Mode
+                    {selectedTarget.mode === 'greybox' && ` (${selectedTarget.credentials?.length || 0} Credentials)`}
+                  </span>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -341,16 +517,20 @@ export default function Dashboard() {
                   {selectedTarget.status === 'idle' && (
                     <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                       <div className="p-6 rounded-full bg-primary/5 border border-primary/10">
-                        <Globe size={48} className="text-primary opacity-50" />
+                        {selectedTarget.mode === 'greybox' ? <Lock size={48} className="text-accent opacity-50" /> : <Globe size={48} className="text-primary opacity-50" />}
                       </div>
                       <div className="max-w-md">
-                        <h3 className="text-xl font-bold mb-2">Ready to initiate reconnaissance</h3>
+                        <h3 className="text-xl font-bold mb-2">Ready to initiate {selectedTarget.mode} reconnaissance</h3>
                         {!isBackendConnected && (
                           <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
                             <WifiOff size={14} /> Backend scanner service is currently offline.
                           </div>
                         )}
-                        <p className="text-muted-foreground mb-6">Configure your active modules and start the scan to map the attack surface and analyze risks.</p>
+                        <p className="text-muted-foreground mb-6">
+                          {selectedTarget.mode === 'greybox' 
+                            ? `Authenticated scan mode. Will use ${selectedTarget.credentials?.length || 0} stored credentials for deep analysis.`
+                            : "Standard unauthenticated scan mode. Will map the public attack surface."}
+                        </p>
                         <Button 
                           onClick={() => runScan(selectedTarget.id)} 
                           size="lg" 
@@ -393,6 +573,26 @@ export default function Dashboard() {
                                {selectedTarget.results.riskAnalysis.riskSummary}
                              </p>
                            </div>
+                        )}
+                        {selectedTarget.mode === 'greybox' && (
+                          <Card className="border-accent/30 bg-accent/5">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-sm flex items-center gap-2">
+                                <Key size={16} className="text-accent" />
+                                Active Credentials for Run
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-2">
+                                {selectedTarget.credentials?.map((c, i) => (
+                                  <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-background/40">
+                                    <span className="font-medium">{c.label}</span>
+                                    <Badge variant="outline" className="h-4 text-[9px]">{c.type.replace('_', ' ')}</Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </CardContent>
+                          </Card>
                         )}
                       </div>
                     </div>
@@ -505,6 +705,7 @@ export default function Dashboard() {
                     <Card className="lg:col-span-1">
                       <CardHeader>
                         <CardTitle className="text-lg">Technological Stack</CardTitle>
+                        {selectedTarget.mode === 'greybox' && <CardDescription className="text-[10px] text-accent">Deep scan results with credentials</CardDescription>}
                       </CardHeader>
                       <CardContent>
                         <div className="flex flex-col gap-2">

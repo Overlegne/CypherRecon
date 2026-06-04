@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Target, ReconModuleType, ReconMode } from './types';
+import { Target, ReconModuleType, ReconMode, Credential } from './types';
 import { analyzeReconDataAndProvideRiskSummary } from '@/ai/flows/analyze-recon-data-and-provide-risk-summary';
 import { useSettingsStore } from './settings-store';
 import { toast } from '@/hooks/use-toast';
@@ -77,7 +77,6 @@ export function useScannerStore() {
             delete pollingRefs.current[targetId];
           }
           
-          // Trigger AI Analysis automatically on completion
           if (updated.results && !updated.results.riskAnalysis && (updated.results.portScanResults?.length > 0 || updated.results.subdomains?.length > 0)) {
             try {
               const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
@@ -119,7 +118,7 @@ export function useScannerStore() {
     return () => clearInterval(interval);
   }, [checkHealth, fetchTargets, isBackendConnected]);
 
-  const addTarget = useCallback(async (host: string, mode: ReconMode, modules: Record<ReconModuleType, boolean>) => {
+  const addTarget = useCallback(async (host: string, mode: ReconMode, modules: Record<ReconModuleType, boolean>, credentials?: Credential[]) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
@@ -127,7 +126,7 @@ export function useScannerStore() {
       const response = await fetch(`${url}/targets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, mode, modules }),
+        body: JSON.stringify({ host, mode, modules, credentials }),
         mode: 'cors'
       });
       
@@ -202,7 +201,6 @@ export function useScannerStore() {
         mode: 'cors'
       });
       if (response.ok) {
-        // We let the polling update the UI when the status changes to failed/stopped on backend
         toast({ title: "Scan Stop Requested", description: "Request sent to scanner engine." });
       }
     } catch (e) {
