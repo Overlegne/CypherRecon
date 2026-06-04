@@ -25,7 +25,8 @@ import {
   ShieldEllipsis,
   BrainCircuit,
   Settings,
-  Cookie
+  Cookie,
+  Dna
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -48,6 +49,7 @@ import { URLHarvestingView } from './URLHarvestingView';
 import { CORSAuditView } from './CORSAuditView';
 import { RiskAnalysisView } from './RiskAnalysisView';
 import { CookieAuditView } from './CookieAuditView';
+import { DNSTakeoverView } from './DNSTakeoverView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -73,6 +75,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   url_harvesting: true,
   cors_audit: true,
   cookie_audit: true,
+  dns_takeover: true,
 };
 
 export default function Dashboard() {
@@ -478,6 +481,7 @@ export default function Dashboard() {
                     <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
                     <TabsTrigger value="harvesting" className="gap-2"><LinkIcon size={14} /> URL Harvesting</TabsTrigger>
                     <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
+                    <TabsTrigger value="dns" className="gap-2"><Dna size={14} /> DNS / Takeover</TabsTrigger>
                     <TabsTrigger value="cors" className="gap-2"><ShieldEllipsis size={14} /> CORS Audit</TabsTrigger>
                     <TabsTrigger value="cookies" className="gap-2"><Cookie size={14} /> Cookie Audit</TabsTrigger>
                     <TabsTrigger value="tls" className="gap-2"><Shield size={14} /> SSL/TLS</TabsTrigger>
@@ -570,6 +574,12 @@ export default function Dashboard() {
                     {selectedChild.results?.webSurface ? (
                       <WebSurfaceView data={selectedChild.results.webSurface} />
                     ) : <div className="py-20 text-center opacity-40">Awaiting Web Surface scan...</div>}
+                  </TabsContent>
+
+                  <TabsContent value="dns" className="mt-6">
+                    {selectedChild.results?.dns_takeover ? (
+                      <DNSTakeoverView data={selectedChild.results.dns_takeover} />
+                    ) : <div className="py-20 text-center opacity-40">Awaiting DNS Audit...</div>}
                   </TabsContent>
 
                   <TabsContent value="cors" className="mt-6">

@@ -24,6 +24,7 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
   }).nullable().optional(),
   cors_audit: z.any().nullable().optional(),
   cookie_audit: z.any().nullable().optional(),
+  dns_takeover: z.any().nullable().optional(),
   techStack: z.array(z.string()).nullable().optional(),
   apiEndpoints: z.array(z.string()).nullable().optional(),
   screenshots: z.array(z.string()).nullable().optional(),
@@ -62,6 +63,14 @@ const analyzeReconDataAndProvideRiskSummaryPrompt = ai.definePrompt({
   output: {schema: AnalyzeReconDataAndProvideRiskSummaryOutputSchema},
   prompt: `Analyze this reconnaissance data for target: {{{target}}}
 
+{{#if dns_takeover}}
+DNS & Subdomain Takeover Analysis:
+- Tested Subdomains: {{dns_takeover.summary.tested}}
+- High Risk Takeover Findings: {{dns_takeover.summary.high_risk}}
+- Suspicious Records: {{dns_takeover.summary.suspicious}}
+- Issues Detected: {{#each dns_takeover.records}}{{#if this.issue}}{{this.subdomain}} ({{this.type}}): {{this.issue}}; {{/if}}{{/each}}
+{{/if}}
+
 {{#if urlHarvesting}}
 Harvested URLs:
 - Total: {{urlHarvesting.summary.found}}
@@ -97,7 +106,7 @@ Cookie Audit:
 - Issues Detected: {{#each cookie_audit.cookies}}{{#if this.issue}}{{this.name}}: {{this.issue}}; {{/if}}{{/each}}
 {{/if}}
 
-Identify significant risks. Focus on exposed admin panels, sensitive backup files, unprotected API endpoints, CORS misconfigurations, and insecure cookies (missing HttpOnly/Secure flags on sensitive names).
+Identify significant risks. Focus on subdomain takeover (dangling CNAMEs), exposed admin panels, sensitive backup files, unprotected API endpoints, CORS misconfigurations, and insecure cookies.
 Provide a risk score 0-100 and a list of potential vulnerabilities with recommendations.`,
 });
 

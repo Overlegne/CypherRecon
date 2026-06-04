@@ -9,7 +9,7 @@ CypherRecon is een enterprise-grade dashboard voor het beheren van multi-target 
 - Installeer **Subfinder** voor subdomain discovery.
 - Installeer Python afhankelijkheden:
   ```bash
-  pip install fastapi uvicorn pydantic httpx playwright beautifulsoup4
+  pip install fastapi uvicorn pydantic httpx playwright beautifulsoup4 dnspython
   playwright install chromium
   ```
 - **API Key**: Haal een gratis API-key op via [Google AI Studio](https://aistudio.google.com/app/apikey) en zet deze in het `.env` bestand in de hoofdmap van dit project:
@@ -28,6 +28,7 @@ from typing import List, Optional, Dict
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
+import dns.resolver
 
 app = FastAPI()
 
@@ -82,7 +83,7 @@ def add_group(g: GroupCreate):
             "host": host.rstrip('/'),
             "status": "idle",
             "progress": 0,
-            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None, "cookie_audit": None}
+            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None, "cookie_audit": None, "dns_takeover": None}
         })
     
     group = {
@@ -109,7 +110,7 @@ def run_group_scan(id: str, background_tasks: BackgroundTasks):
         for child in group["childTargets"]:
             child["status"] = "running"
             child["progress"] = 0
-            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None, "cookie_audit": None}
+            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None, "cookie_audit": None, "dns_takeover": None}
         
         background_tasks.add_task(execute_group_workflow, id)
         return {"status": "started"}
@@ -192,6 +193,7 @@ async def execute_single_target(group, child, group_id):
         log(f"Initiating {mode.upper()} scan for {host}.", "info")
 
         # Phase 1: Subdomain Enumeration
+        subdomains = []
         if modules.get("subdomain_enumeration") and not is_stopped():
             child["activeModule"] = "subdomain_enumeration"
             log("Phase 1: Subdomain Discovery...")
@@ -201,13 +203,78 @@ async def execute_single_target(group, child, group_id):
                 try:
                     process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                     stdout, _ = await process.communicate()
-                    child["results"]["subdomains"] = [s for s in stdout.decode().strip().split('\n') if s]
-                    log(f"Found {len(child['results']['subdomains'])} subdomains.", "success")
+                    subdomains = [s for s in stdout.decode().strip().split('\n') if s]
+                    child["results"]["subdomains"] = subdomains
+                    log(f"Found {len(subdomains)} subdomains.", "success")
                 except:
                     log("Execution of subfinder failed.", "error")
             else:
                 log("Subfinder binary not found, skipping subdomain discovery.", "warn")
             child["progress"] = 15
+
+        # Phase 1.5: DNS / Subdomain Takeover
+        if modules.get("dns_takeover") and not is_stopped():
+            child["activeModule"] = "dns_takeover"
+            log("Phase 1.5: DNS Audit...")
+            dns_results = {"records": [], "summary": {"tested": 0, "cname_records": 0, "suspicious": 0, "high_risk": 0}}
+            targets_to_test = list(set([host] + subdomains))
+            
+            # Bekende cloud providers voor takeover detectie
+            cloud_providers = [
+                ".s3.amazonaws.com", ".azurewebsites.net", ".github.io", ".herokuapp.com",
+                ".cloudfront.net", ".wpengine.com", ".zendesk.com", ".myshopify.com"
+            ]
+
+            for sd in targets_to_test:
+                dns_results["summary"]["tested"] += 1
+                try:
+                    resolver = dns.resolver.Resolver()
+                    resolver.timeout = 2
+                    resolver.lifetime = 2
+                    
+                    # Check CNAME
+                    try:
+                        answers = resolver.resolve(sd, 'CNAME')
+                        for rdata in answers:
+                            cname_val = str(rdata.target).rstrip('.')
+                            dns_results["summary"]["cname_records"] += 1
+                            
+                            status = "ok"
+                            issue = None
+                            
+                            # Check of CNAME resolvet
+                            try:
+                                resolver.resolve(cname_val)
+                            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+                                status = "high"
+                                issue = "Dangling CNAME: Target does not resolve"
+                                dns_results["summary"]["high_risk"] += 1
+                            except:
+                                if any(cp in cname_val for cp in cloud_providers):
+                                    status = "suspicious"
+                                    issue = "Points to external cloud service"
+                                    dns_results["summary"]["suspicious"] += 1
+                            
+                            dns_results["records"].append({
+                                "subdomain": sd, "type": "CNAME", "value": cname_val,
+                                "status": status, "issue": issue
+                            })
+                    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN): pass
+                    
+                    # Check A records
+                    try:
+                        answers = resolver.resolve(sd, 'A')
+                        for rdata in answers:
+                            dns_results["records"].append({
+                                "subdomain": sd, "type": "A", "value": str(rdata),
+                                "status": "ok"
+                            })
+                    except: pass
+                except: pass
+            
+            child["results"]["dns_takeover"] = dns_results
+            log(f"DNS Audit complete. {dns_results['summary']['high_risk']} takeover risks found.", "success")
+            child["progress"] = 25
 
         # Phase 2: Port Scanning
         web_ports = [80, 443, 8080]
@@ -250,7 +317,7 @@ async def execute_single_target(group, child, group_id):
                             except: continue
                 child["results"]["portScanResults"] = ports_results
                 log(f"Service analysis complete. {len(found_ports)} ports analyzed.", "success")
-            child["progress"] = 30
+            child["progress"] = 35
 
         # Phase 3: Web Surface & Cookie Audit
         harvested_urls = []
@@ -308,12 +375,12 @@ async def execute_single_target(group, child, group_id):
                                 issue = None
                                 is_sensitive = any(x in name.lower() for x in ["session", "auth", "token", "jwt", "key"])
                                 
-                                if not c_secure and url.startswith("https"):
-                                    status = "high" if is_sensitive else "weak"
-                                    issue = "Missing Secure flag"
-                                elif not c_httponly and is_sensitive:
+                                if not c_httponly and is_sensitive:
                                     status = "high"
                                     issue = "Missing HttpOnly on sensitive cookie"
+                                elif not c_secure and url.startswith("https"):
+                                    status = "high" if is_sensitive else "weak"
+                                    issue = "Missing Secure flag"
                                 elif c_samesite and c_samesite.lower() == "none" and not c_secure:
                                     status = "high"
                                     issue = "SameSite=None without Secure"

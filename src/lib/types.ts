@@ -38,7 +38,8 @@ export type ReconModuleType =
   | 'tls_analysis'
   | 'url_harvesting'
   | 'cors_audit'
-  | 'cookie_audit';
+  | 'cookie_audit'
+  | 'dns_takeover';
 
 export interface OsintFinding {
   label: string;
@@ -154,6 +155,24 @@ export interface CookieAuditData {
   };
 }
 
+export interface DNSRecord {
+  subdomain: string;
+  type: string;
+  value: string;
+  status: 'ok' | 'suspicious' | 'high' | 'wildcard';
+  issue?: string;
+}
+
+export interface DNSTakeoverData {
+  records: DNSRecord[];
+  summary: {
+    tested: number;
+    cname_records: number;
+    suspicious: number;
+    high_risk: number;
+  };
+}
+
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
@@ -167,6 +186,7 @@ export interface ScanResults {
   urlHarvesting?: URLHarvestingData;
   cors_audit?: CORSAuditData;
   cookie_audit?: CookieAuditData;
+  dns_takeover?: DNSTakeoverData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 
