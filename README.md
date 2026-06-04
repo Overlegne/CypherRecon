@@ -26,6 +26,7 @@ from typing import List, Optional, Dict
 
 app = FastAPI()
 
+# CRITICAL: CORS must be enabled for the frontend to talk to this local service
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,6 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# In-memory store for targets (Production should use SQLite/PostgreSQL)
 db = {"targets": {}}
 
 class TargetCreate(BaseModel):
@@ -108,12 +110,14 @@ async def execute_full_workflow(id: str):
             log("Discovered 3 potential subdomains.", "success")
             t["progress"] = 20
 
-        # Module 2: Port Scanning (REAL NMAP)
+        # Module 2: Port Scanning (REAL NMAP - ALL PORTS)
         if modules.get("port_scanning"):
             t["activeModule"] = "port_scanning"
-            log(f"Initiating Nmap -sCV on {host}...")
-            # -sC (default scripts), -sV (version detection), -p 1-1000 (standard range)
-            cmd = ['nmap', '-sCV', '-p', '1-1000', host]
+            log(f"Initiating full Nmap scan (-sCV -p-) on {host}...")
+            log("This may take several minutes for 65,535 ports...", "warn")
+            
+            # -sC (default scripts), -sV (version detection), -p- (ALL PORTS), -T4 (aggressive timing)
+            cmd = ['nmap', '-sCV', '-p-', '-T4', host]
             process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await process.communicate()
             
@@ -121,16 +125,19 @@ async def execute_full_workflow(id: str):
                 output = stdout.decode()
                 ports = []
                 for line in output.split('\n'):
-                    if "/tcp" in line:
+                    # Match typical nmap output lines: "80/tcp open  http"
+                    if "/tcp" in line or "/udp" in line:
                         parts = line.split()
-                        port_val = int(parts[0].split('/')[0])
-                        state = parts[1]
-                        service = parts[2]
-                        version = " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
-                        ports.append({"port": port_val, "service": service, "state": state, "version": version})
+                        if len(parts) >= 3:
+                            port_proto = parts[0].split('/')
+                            port_val = int(port_proto[0])
+                            state = parts[1]
+                            service = parts[2]
+                            version = " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
+                            ports.append({"port": port_val, "service": service, "state": state, "version": version})
                 
                 t["results"]["portScanResults"] = ports
-                log(f"Nmap found {len(ports)} ports (including filtered).", "success")
+                log(f"Nmap complete. Found {len(ports)} ports (including open and filtered).", "success")
             else:
                 log(f"Nmap Error: {stderr.decode()}", "error")
             t["progress"] = 50
@@ -144,6 +151,7 @@ async def execute_full_workflow(id: str):
                 {"label": "Public GitHub Repo", "description": "Found repository with potential config leaks", "url": f"https://github.com/search?q={host}", "type": "code"},
                 {"label": "Exposed Employee Data", "description": "Names and roles found via LinkedIn mapping", "url": f"https://www.linkedin.com/search/results/people/?keywords={host}", "type": "social"}
             ]
+            log("OSINT search finished.", "success")
             t["progress"] = 70
 
         # Module 4: Tech Stack & API Discovery
@@ -153,6 +161,7 @@ async def execute_full_workflow(id: str):
             await asyncio.sleep(2)
             t["results"]["techStack"] = ["React", "Next.js", "Nginx 1.18.0", "FastAPI (Python)"]
             t["results"]["apiEndpoints"] = ["/api/v1/user", "/api/v1/auth/login", "/admin/config", "/api/v2/debug"]
+            log("Tech stack identified.", "success")
             t["progress"] = 90
 
         # Finalize
