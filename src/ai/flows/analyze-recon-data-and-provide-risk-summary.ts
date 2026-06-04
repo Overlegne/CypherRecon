@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A Genkit flow for analyzing reconnaissance data and providing a risk summary and score.
@@ -107,11 +106,9 @@ Reconnaissance Data:
 {{#if portScanResults}}Ports: {{#each portScanResults}}- Port: {{this.port}}, Service: {{this.service}}, State: {{this.state}} {{/each}}{{/if}}
 {{#if webSurface}}
 Web Surface (Security Headers):
-- Tested: {{webSurface.summary.tested}}, OK: {{webSurface.summary.ok}}, Missing: {{webSurface.summary.missing}}, Weak: {{webSurface.summary.weak}}
+- Summary: Tested: {{webSurface.summary.tested}}, OK: {{webSurface.summary.ok}}, Missing: {{webSurface.summary.missing}}, Weak: {{webSurface.summary.weak}}
 {{#each webSurface.headers}}
-{{#if (or (eq this.status "missing") (eq this.status "weak"))}}
-- Header {{this.name}} is {{this.status}} (Severity: {{this.severity}})
-{{/if}}
+- Header: {{this.name}}, Status: {{this.status}}, Severity: {{this.severity}}
 {{/each}}
 {{/if}}
 
@@ -119,7 +116,7 @@ Instructions:
 1. Provide a 'riskSummary' highlighting the most significant risks.
 2. Assign a 'riskScore' (0-100).
 3. Provide a 'riskExplanation' justifying the score.
-4. List 'potentialVulnerabilities' with severity and recommendations. Focus on missing security headers if relevant.`,
+4. List 'potentialVulnerabilities' with severity and recommendations. Focus on missing or weak security headers if relevant.`,
 });
 
 // Flow definition

@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useScannerStore } from '@/lib/scanner-store';
 import { Target, ReconMode, ReconModuleType, Credential, CredentialType } from '@/lib/types';
 import { 
@@ -83,6 +82,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
 };
 
 export default function Dashboard() {
+  const [mounted, setMounted] = useState(false);
   const { 
     targets, 
     selectedTargetId, 
@@ -102,6 +102,10 @@ export default function Dashboard() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const selectedTarget = targets.find(t => t.id === selectedTargetId);
 
   const handleAddTarget = () => {
@@ -120,6 +124,10 @@ export default function Dashboard() {
       type: 'api_key',
       label: `Credential ${credentials.length + 1}`,
       value: '',
+      headerName: '',
+      username: '',
+      password: '',
+      notes: '',
       enabled: true
     };
     setCredentials([...credentials, newCred]);
@@ -158,6 +166,8 @@ export default function Dashboard() {
       default: return <Unplug className="text-yellow-500" size={18} />;
     }
   };
+
+  if (!mounted) return null;
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -305,7 +315,7 @@ export default function Dashboard() {
                                   <Input 
                                     className="h-8 text-sm"
                                     placeholder="X-API-Key" 
-                                    value={cred.headerName} 
+                                    value={cred.headerName || ''} 
                                     onChange={(e) => updateCredential(cred.id, { headerName: e.target.value })}
                                   />
                                 </div>
@@ -315,7 +325,7 @@ export default function Dashboard() {
                                   <Label className="text-[10px] uppercase font-bold text-muted-foreground">Username</Label>
                                   <Input 
                                     className="h-8 text-sm"
-                                    value={cred.username} 
+                                    value={cred.username || ''} 
                                     onChange={(e) => updateCredential(cred.id, { username: e.target.value })}
                                   />
                                 </div>
@@ -327,7 +337,7 @@ export default function Dashboard() {
                                     <Input 
                                       type={showSecrets[cred.id] ? "text" : "password"}
                                       className="h-8 text-sm pr-8"
-                                      value={cred.password} 
+                                      value={cred.password || ''} 
                                       onChange={(e) => updateCredential(cred.id, { password: e.target.value })}
                                     />
                                     <Button 
@@ -348,7 +358,7 @@ export default function Dashboard() {
                                     <Input 
                                       type={showSecrets[cred.id] ? "text" : "password"}
                                       className="h-8 text-sm pr-8"
-                                      value={cred.value} 
+                                      value={cred.value || ''} 
                                       onChange={(e) => updateCredential(cred.id, { value: e.target.value })}
                                     />
                                     <Button 
