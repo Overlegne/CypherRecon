@@ -48,7 +48,7 @@ class TargetCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok", "engine": "CypherRecon Core v1.3"}
+    return {"status": "ok", "engine": "CypherRecon Core v1.4"}
 
 @app.get("/targets")
 def get_targets(): 
@@ -84,11 +84,6 @@ def run_scan(id: str, background_tasks: BackgroundTasks):
 def stop_scan(id: str):
     if id in db["targets"]:
         db["stop_flags"].add(id)
-        db["targets"][id]["status"] = "failed"
-        db["targets"][id]["results"]["logs"].append({
-            "id": str(uuid.uuid4()), "timestamp": int(time.time()*1000),
-            "message": "Scan termination requested by user.", "type": "warn"
-        })
         return {"status": "stopping"}
     return {"error": "not found"}, 404
 
@@ -132,17 +127,22 @@ async def execute_full_workflow(id: str):
                     subs = stdout.decode().strip().split('\n')
                     t["results"]["subdomains"] = [s for s in subs if s]
                     log(f"Discovered {len(t['results']['subdomains'])} subdomains.", "success")
+            else:
+                log("subfinder not found in PATH or ~/go/bin/. Skipping active discovery.", "warn")
             t["progress"] = 20
 
         # Module 2: Port Scanning
         if modules.get("port_scanning") and not is_stopped():
             t["activeModule"] = "port_scanning"
-            log(f"Scanning all 65,535 ports on {host}...")
+            log(f"Step 1: Discovering open ports on all 65,535 ports for {host}...")
             cmd_fast = ['nmap', '-p-', '--open', '-T4', host]
             proc = await asyncio.create_subprocess_exec(*cmd_fast, stdout=asyncio.subprocess.PIPE)
             stdout, _ = await proc.communicate()
             
-            if is_stopped(): return
+            if is_stopped(): 
+                log("Scan terminated.", "warn")
+                t["status"] = "failed"
+                return
             
             found_ports = []
             for line in stdout.decode().split('\n'):
@@ -151,7 +151,7 @@ async def execute_full_workflow(id: str):
                     if port.isdigit(): found_ports.append(port)
             
             if found_ports and not is_stopped():
-                log(f"Found {len(found_ports)} ports. Running service analysis...", "success")
+                log(f"Found {len(found_ports)} active ports ({', '.join(found_ports)}). Step 2: Running service analysis...", "success")
                 ports_arg = ",".join(found_ports)
                 cmd_deep = ['nmap', '-sCV', '-p', ports_arg, host]
                 proc_deep = await asyncio.create_subprocess_exec(*cmd_deep, stdout=asyncio.subprocess.PIPE)
@@ -164,47 +164,66 @@ async def execute_full_workflow(id: str):
                             parts = line.split()
                             if len(parts) >= 3:
                                 port_val = int(parts[0].split('/')[0])
-                                ports_results.append({"port": port_val, "service": parts[2], "state": parts[1], "version": " ".join(parts[3:])})
+                                ports_results.append({
+                                    "port": port_val, 
+                                    "service": parts[2], 
+                                    "state": parts[1], 
+                                    "version": " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
+                                })
                     t["results"]["portScanResults"] = ports_results
+                    log("Network mapping complete.", "success")
+            else:
+                log("No open ports discovered during fast scan.", "info")
             t["progress"] = 50
 
         # Module 3: OSINT
         if modules.get("osint") and not is_stopped():
             t["activeModule"] = "osint"
-            log("Generating OSINT profile...")
+            log("Generating target OSINT profile...")
             t["results"]["osintData"] = [
                 {"label": "GitHub Search", "description": f"Target specific code patterns for {host}", "url": f"https://github.com/search?q={host}", "type": "code"},
-                {"label": "Shodan", "description": "Historical IP data", "url": f"https://www.shodan.io/search?query={host}", "type": "info"}
+                {"label": "Shodan Historical", "description": "Exposed infrastructure history", "url": f"https://www.shodan.io/search?query={host}", "type": "info"},
+                {"label": "Certificate Logs", "description": "SSL/TLS transparency entries", "url": f"https://crt.sh/?q={host}", "type": "info"}
             ]
             t["progress"] = 70
 
         # Module 4: Screenshots (Using Playwright)
         if modules.get("screenshotting") and not is_stopped():
             t["activeModule"] = "screenshotting"
-            log(f"Taking visual snapshot of {host}...")
+            log(f"Attempting visual snapshot of {host}...")
             try:
                 from playwright.async_api import async_playwright
                 async with async_playwright() as p:
                     browser = await p.chromium.launch()
                     page = await browser.new_page()
-                    target_url = host if "://" in host else f"https://{host}"
-                    await page.goto(target_url, timeout=30000)
+                    # Try HTTPS first, if connection refused or error, try HTTP
+                    try:
+                        target_url = host if "://" in host else f"https://{host}"
+                        await page.goto(target_url, timeout=15000)
+                    except Exception:
+                        target_url = host if "://" in host else f"http://{host}"
+                        log(f"HTTPS connection failed, trying HTTP: {target_url}", "warn")
+                        await page.goto(target_url, timeout=15000)
+                    
                     screenshot_bytes = await page.screenshot()
                     b64_img = base64.b64encode(screenshot_bytes).decode()
                     t["results"]["screenshots"].append(f"data:image/png;base64,{b64_img}")
                     await browser.close()
                 log("Snapshot captured successfully.", "success")
             except Exception as e:
-                log(f"Screenshot failed: {str(e)}", "warn")
+                log(f"Screenshot failed (Target may be unreachable or down): {str(e)}", "warn")
             t["progress"] = 90
 
         if not is_stopped():
             t["status"] = "completed"
             t["progress"] = 100
             t["lastRunAt"] = int(time.time()*1000)
-            log("Sequence finished.", "success")
+            log("All sequence modules completed.", "success")
+        else:
+            log("Scan aborted by user.", "warn")
+            t["status"] = "failed"
 
     except Exception as e:
-        log(f"Error: {str(e)}", "error")
+        log(f"Critical workflow error: {str(e)}", "error")
         t["status"] = "failed"
 ```

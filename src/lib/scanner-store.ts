@@ -77,6 +77,7 @@ export function useScannerStore() {
             delete pollingRefs.current[targetId];
           }
           
+          // Trigger AI Analysis automatically on completion
           if (updated.results && !updated.results.riskAnalysis && (updated.results.portScanResults?.length > 0 || updated.results.subdomains?.length > 0)) {
             try {
               const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
@@ -155,6 +156,10 @@ export function useScannerStore() {
       if (response.ok) {
         setTargets(prev => prev.filter(t => t.id !== id));
         if (selectedTargetId === id) setSelectedTargetId(null);
+        if (pollingRefs.current[id]) {
+          clearInterval(pollingRefs.current[id]);
+          delete pollingRefs.current[id];
+        }
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Could not delete target." });
@@ -197,12 +202,8 @@ export function useScannerStore() {
         mode: 'cors'
       });
       if (response.ok) {
-        if (pollingRefs.current[targetId]) {
-          clearInterval(pollingRefs.current[targetId]);
-          delete pollingRefs.current[targetId];
-        }
-        fetchTargets();
-        toast({ title: "Scan Stopped", description: "Termination request sent." });
+        // We let the polling update the UI when the status changes to failed/stopped on backend
+        toast({ title: "Scan Stop Requested", description: "Request sent to scanner engine." });
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Failed to stop scan." });
