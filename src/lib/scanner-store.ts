@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Target, ReconModuleType, ReconMode, LogEntry } from './types';
+import { Target, ReconModuleType, ReconMode } from './types';
 import { analyzeReconDataAndProvideRiskSummary } from '@/ai/flows/analyze-recon-data-and-provide-risk-summary';
 import { useSettingsStore } from './settings-store';
 import { toast } from '@/hooks/use-toast';
@@ -31,6 +31,7 @@ export function useScannerStore() {
   }, [settings.apiUrl]);
 
   const fetchTargets = useCallback(async () => {
+    if (!isBackendConnected) return;
     try {
       const response = await fetch(`${settings.apiUrl}/targets`, { cache: 'no-store' });
       if (response.ok) {
@@ -38,13 +39,12 @@ export function useScannerStore() {
         setTargets(data);
       }
     } catch (e) {
-      // Backend might be down, handled by checkHealth
+      // Backend unreachable
     }
-  }, [settings.apiUrl]);
+  }, [settings.apiUrl, isBackendConnected]);
 
   useEffect(() => {
     checkHealth();
-    fetchTargets();
     const interval = setInterval(() => {
       checkHealth();
       fetchTargets();
@@ -86,22 +86,20 @@ export function useScannerStore() {
   }, [settings.apiUrl, selectedTargetId]);
 
   const toggleModule = useCallback(async (targetId: string, module: ReconModuleType) => {
-    setTargets(prev => prev.map(t => 
-      t.id === targetId 
-        ? { ...t, modules: { ...t.modules, [module]: !t.modules[module] } }
-        : t
-    ));
-
     try {
-      await fetch(`${settings.apiUrl}/targets/${targetId}/modules`, {
+      const response = await fetch(`${settings.apiUrl}/targets/${targetId}/modules`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ module })
       });
+      if (response.ok) {
+        const updated = await response.json();
+        setTargets(prev => prev.map(t => t.id === targetId ? updated : t));
+      }
     } catch (e) {
-      fetchTargets();
+      // Silent fail, state remains
     }
-  }, [settings.apiUrl, fetchTargets]);
+  }, [settings.apiUrl]);
 
   const pollStatus = useCallback(async (targetId: string) => {
     try {
@@ -154,15 +152,15 @@ export function useScannerStore() {
       });
 
       if (response.ok) {
-        setTargets(prev => prev.map(t => t.id === targetId ? { ...t, status: 'running', progress: 0 } : t));
         if (!pollingRefs.current[targetId]) {
           pollingRefs.current[targetId] = setInterval(() => pollStatus(targetId), 2000);
         }
+        fetchTargets();
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Scan Failed", description: "Backend connection lost during initiation." });
     }
-  }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus, isBackendConnected]);
+  }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus, isBackendConnected, fetchTargets]);
 
   return {
     targets,
