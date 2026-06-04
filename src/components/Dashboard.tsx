@@ -17,7 +17,10 @@ import {
   Clock,
   LayoutDashboard,
   Search,
-  Activity
+  Activity,
+  Network,
+  Cpu,
+  Unplug
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -39,6 +42,8 @@ import { RiskAnalysisView } from './RiskAnalysisView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 export default function Dashboard() {
   const { 
@@ -218,8 +223,11 @@ export default function Dashboard() {
             {/* Content Area */}
             <div className="flex-1 overflow-auto p-6 space-y-6">
               <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="bg-secondary/50 p-1">
+                <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
                   <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
+                  <TabsTrigger value="network" className="gap-2" disabled={!selectedTarget.results?.portScanResults}><Network size={14} /> Network</TabsTrigger>
+                  <TabsTrigger value="discovery" className="gap-2" disabled={!selectedTarget.results?.subdomains}><Search size={14} /> Discovery</TabsTrigger>
+                  <TabsTrigger value="surface" className="gap-2" disabled={!selectedTarget.results?.techStack}><Cpu size={14} /> Web Surface</TabsTrigger>
                   <TabsTrigger value="modules" className="gap-2"><Settings2 size={14} /> Modules</TabsTrigger>
                   <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
                   <TabsTrigger value="report" className="gap-2" disabled={!selectedTarget.results?.riskAnalysis}><FileText size={14} /> Risk Analysis</TabsTrigger>
@@ -247,19 +255,19 @@ export default function Dashboard() {
                         <div className="p-6 rounded-xl border border-border bg-card/50">
                           <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Discovery Findings</h4>
                           <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
                               <span className="block text-2xl font-bold font-code">{selectedTarget.results?.subdomains?.length || 0}</span>
                               <span className="text-xs text-muted-foreground uppercase">Subdomains</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
                               <span className="block text-2xl font-bold font-code">{selectedTarget.results?.portScanResults?.length || 0}</span>
                               <span className="text-xs text-muted-foreground uppercase">Active Ports</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
                               <span className="block text-2xl font-bold font-code">{selectedTarget.results?.apiEndpoints?.length || 0}</span>
                               <span className="text-xs text-muted-foreground uppercase">API Paths</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
                               <span className="block text-2xl font-bold font-code">{selectedTarget.results?.techStack?.length || 0}</span>
                               <span className="text-xs text-muted-foreground uppercase">Tech Stack</span>
                             </div>
@@ -271,7 +279,7 @@ export default function Dashboard() {
 
                       <div className="space-y-6">
                         <div className="p-6 rounded-xl border border-border bg-card/50">
-                          <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Technology Stack</h4>
+                          <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Quick Tech Profile</h4>
                           <div className="flex flex-wrap gap-2">
                             {selectedTarget.results?.techStack?.map((tech, i) => (
                               <Badge key={i} variant="secondary" className="px-3 py-1 font-medium">{tech}</Badge>
@@ -289,9 +297,6 @@ export default function Dashboard() {
                              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
                                {selectedTarget.results.riskAnalysis.riskSummary}
                              </p>
-                             <Button variant="link" className="px-0 mt-2 text-primary" onClick={() => {
-                               // Programmatic tab switch would be nice here
-                             }}>View detailed report →</Button>
                            </div>
                         )}
                       </div>
@@ -299,11 +304,125 @@ export default function Dashboard() {
                   )}
                 </TabsContent>
 
+                <TabsContent value="network" className="mt-6 space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Network size={20} className="text-primary" />
+                        Service Version Scan results (nmap -sCV)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Port</TableHead>
+                            <TableHead>Service</TableHead>
+                            <TableHead>State</TableHead>
+                            <TableHead>Version Info</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedTarget.results?.portScanResults?.map((res, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-code font-bold text-primary">{res.port}</TableCell>
+                              <TableCell className="capitalize">{res.service}</TableCell>
+                              <TableCell>
+                                <Badge variant={res.state === 'open' ? 'default' : 'outline'} className={res.state === 'open' ? 'bg-green-500 hover:bg-green-600' : ''}>
+                                  {res.state}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground font-code text-xs">{res.version || 'Unknown'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="discovery" className="mt-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Subdomains Map</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {selectedTarget.results?.subdomains?.map((sub, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border">
+                              <span className="font-code text-sm">{sub}</span>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`https://${sub}`, '_blank')}>
+                                <Globe size={14} />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">OSINT & Public Leaks</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {selectedTarget.results?.osintData?.map((data, i) => (
+                            <div key={i} className="flex gap-3 p-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5">
+                              <Unplug className="text-yellow-500 shrink-0" size={18} />
+                              <p className="text-sm">{data}</p>
+                            </div>
+                          ))}
+                          {(!selectedTarget.results?.osintData || selectedTarget.results.osintData.length === 0) && (
+                            <p className="text-sm text-muted-foreground italic">No public leaks discovered in current sequence.</p>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="surface" className="mt-6 space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <Card className="lg:col-span-1">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Technological Stack</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-col gap-2">
+                          {selectedTarget.results?.techStack?.map((tech, i) => (
+                            <div key={i} className="flex items-center gap-2 p-2 rounded bg-secondary/40 border border-border">
+                              <div className="w-2 h-2 rounded-full bg-primary" />
+                              <span className="text-sm font-medium">{tech}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="lg:col-span-2">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Endpoints Discovered</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {selectedTarget.results?.apiEndpoints?.map((endpoint, i) => (
+                            <div key={i} className="group flex items-center justify-between p-2 rounded bg-card border border-border hover:border-primary/40 transition-colors">
+                              <code className="text-xs text-primary">{endpoint}</code>
+                              <Badge variant="outline" className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity uppercase">API</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
                 <TabsContent value="modules" className="mt-6">
                   <div className="max-w-4xl space-y-6">
                     <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm text-primary flex items-start gap-3">
                       <Settings2 className="shrink-0 mt-0.5" size={18} />
-                      <p>Adjust these settings before initiating a scan. Some modules may increase noise on the target network.</p>
+                      <p>Adjust these settings before initiating a scan. Deep port scans (-p-) with version detection (-sV) are enabled by default for the Port Scanning module.</p>
                     </div>
                     <ModuleConfig target={selectedTarget} onToggle={(mod) => toggleModule(selectedTarget.id, mod)} />
                   </div>

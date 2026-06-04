@@ -131,24 +131,31 @@ export function useScannerStore() {
 
         // Mock findings based on target host
         if (module === 'subdomain_enumeration') {
-          mockResults.subdomains = ['dev.' + target.host, 'api.' + target.host, 'vpn.' + target.host, 'staging.' + target.host];
-          addLog(`Found ${mockResults.subdomains.length} subdomains.`, 'success');
+          mockResults.subdomains = ['dev.' + target.host, 'api.' + target.host, 'vpn.' + target.host, 'staging.' + target.host, 'mail.' + target.host, 'auth.' + target.host];
+          addLog(`Found ${mockResults.subdomains.length} subdomains via brute-force and passive DNS.`, 'success');
         } else if (module === 'port_scanning') {
+          addLog(`Running nmap -sCV -p- --min-rate 1000 -T4 ${target.host}`, 'info');
+          addLog(`Analyzing 65,535 ports for service versions and default scripts...`, 'info');
+          await new Promise(r => setTimeout(r, 2000));
+          
           mockResults.portScanResults = [
+            { port: 22, service: 'ssh', state: 'open', version: 'OpenSSH 8.2p1 Ubuntu 4ubuntu0.5' },
             { port: 80, service: 'http', state: 'open', version: 'Nginx 1.18.0' },
             { port: 443, service: 'https', state: 'open', version: 'Nginx 1.18.0' },
-            { port: 8080, service: 'http-proxy', state: 'open', version: 'Apache Tomcat 9.0' },
+            { port: 3306, service: 'mysql', state: 'filtered', version: 'MySQL 8.0.28' },
+            { port: 8080, service: 'http-proxy', state: 'open', version: 'Apache Tomcat 9.0.31' },
+            { port: 9000, service: 'cslistener', state: 'open', version: 'FastCGI' },
           ];
-          addLog(`Identified open ports: 80, 443, 8080.`, 'success');
+          addLog(`Identified ${mockResults.portScanResults.filter((p: any) => p.state === 'open').length} open ports with detailed service fingerprinting.`, 'success');
         } else if (module === 'tech_stack') {
-          mockResults.techStack = ['React', 'Next.js', 'Vercel', 'AWS CloudFront'];
-          addLog(`Detected tech stack: ${mockResults.techStack.join(', ')}`, 'success');
+          mockResults.techStack = ['React 18.2.0', 'Next.js 14.0.0', 'Tailwind CSS', 'Vercel Edge Runtime', 'AWS CloudFront', 'Cloudflare WAF'];
+          addLog(`Detected tech stack via Wappalyzer fingerprinting and header analysis.`, 'success');
         } else if (module === 'api_discovery') {
-          mockResults.apiEndpoints = ['/api/v1/users', '/api/v1/login', '/v2/swagger.json'];
-          addLog(`Discovered ${mockResults.apiEndpoints.length} API endpoints.`, 'success');
+          mockResults.apiEndpoints = ['/api/v1/users', '/api/v1/login', '/api/v2/debug/config', '/v2/swagger.json', '/graphiql', '/.well-known/security.txt'];
+          addLog(`Discovered ${mockResults.apiEndpoints.length} API endpoints via directory busting and crawler.`, 'success');
         } else if (module === 'osint') {
-          mockResults.osintData = ['Found public GitHub repo', 'Exposed mail server info'];
-          addLog(`OSINT: found potential data leaks.`, 'warn');
+          mockResults.osintData = ['Found public GitHub repository containing config files', 'Exposed mail server info in WHOIS', 'Found 3 developer profiles on LinkedIn'];
+          addLog(`OSINT: discovered potential data leaks and personnel mapping.`, 'warn');
         }
 
         updateTarget(targetId, { results: { ...target.results, ...mockResults, logs: [] } }); // logs handled separately
@@ -156,14 +163,14 @@ export function useScannerStore() {
 
       // AI Analysis
       updateTarget(targetId, { activeModule: undefined, progress: Math.round(modulesToRun.length * step) });
-      addLog("Starting AI-powered risk assessment...", 'info');
+      addLog("Starting AI-powered risk assessment on gathered reconnaissance data...", 'info');
       
       const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
         target: target.host,
         ...mockResults
       });
 
-      addLog("Risk assessment complete. Generating final report.", 'success');
+      addLog("Risk assessment complete. Findings correlated and scored.", 'success');
       
       setTargets(prev => prev.map(t => t.id === targetId ? {
         ...t,
