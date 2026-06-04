@@ -13,6 +13,13 @@ export type ReconModuleType =
   | 'api_discovery' 
   | 'screenshotting';
 
+export interface OsintFinding {
+  label: string;
+  description: string;
+  url?: string;
+  type: 'leak' | 'info' | 'social' | 'code';
+}
+
 export interface Target {
   id: string;
   host: string; // domain or IP
@@ -36,7 +43,7 @@ export interface LogEntry {
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
-  osintData?: string[];
+  osintData?: OsintFinding[];
   portScanResults?: { port: number; service: string; version?: string; state: string }[];
   techStack?: string[];
   apiEndpoints?: string[];

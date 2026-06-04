@@ -22,7 +22,11 @@ import {
   Cpu,
   Unplug,
   Settings,
-  ChevronRight
+  ChevronRight,
+  ExternalLink,
+  Code,
+  Users,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -96,6 +100,15 @@ export default function Dashboard() {
       case 'completed': return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Complete</Badge>;
       case 'failed': return <Badge variant="destructive">Failed</Badge>;
       default: return <Badge variant="outline">Idle</Badge>;
+    }
+  };
+
+  const getOsintIcon = (type: string) => {
+    switch (type) {
+      case 'code': return <Code className="text-blue-400" size={18} />;
+      case 'social': return <Users className="text-purple-400" size={18} />;
+      case 'leak': return <AlertTriangle className="text-red-400" size={18} />;
+      default: return <Unplug className="text-yellow-500" size={18} />;
     }
   };
 
@@ -432,10 +445,42 @@ export default function Dashboard() {
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-4">
-                          {selectedTarget.results?.osintData?.map((data, i) => (
-                            <div key={i} className="flex gap-3 p-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5">
-                              <Unplug className="text-yellow-500 shrink-0" size={18} />
-                              <p className="text-sm">{data}</p>
+                          {selectedTarget.results?.osintData?.map((finding, i) => (
+                            <div key={i} className="flex flex-col gap-3 p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 group">
+                              <div className="flex items-start justify-between">
+                                <div className="flex gap-3">
+                                  <div className="mt-0.5">{getOsintIcon(finding.type)}</div>
+                                  <div className="space-y-1">
+                                    <h4 className="text-sm font-bold flex items-center gap-2">
+                                      {finding.label}
+                                      {finding.type === 'leak' && <Badge variant="destructive" className="h-4 text-[9px] uppercase">Critical Leak</Badge>}
+                                    </h4>
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
+                                      {finding.description}
+                                    </p>
+                                  </div>
+                                </div>
+                                {finding.url && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="icon" 
+                                    className="h-8 w-8 shrink-0 hover:bg-yellow-500/10"
+                                    onClick={() => window.open(finding.url, '_blank')}
+                                  >
+                                    <ExternalLink size={14} />
+                                  </Button>
+                                )}
+                              </div>
+                              {finding.url && (
+                                <div className="pl-7 mt-1">
+                                  <button 
+                                    onClick={() => window.open(finding.url, '_blank')}
+                                    className="text-[10px] text-primary hover:underline flex items-center gap-1 font-code truncate max-w-full"
+                                  >
+                                    {finding.url}
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
                           {(!selectedTarget.results?.osintData || selectedTarget.results.osintData.length === 0) && (

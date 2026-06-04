@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Target, ScanStatus, ReconModuleType, ReconMode, LogEntry } from './types';
+import { Target, ScanStatus, ReconModuleType, ReconMode, LogEntry, OsintFinding } from './types';
 import { analyzeReconDataAndProvideRiskSummary } from '@/ai/flows/analyze-recon-data-and-provide-risk-summary';
 
 const DEFAULT_MODULES: Record<ReconModuleType, boolean> = {
@@ -154,7 +154,32 @@ export function useScannerStore() {
           mockResults.apiEndpoints = ['/api/v1/users', '/api/v1/login', '/api/v2/debug/config', '/v2/swagger.json', '/graphiql', '/.well-known/security.txt'];
           addLog(`Discovered ${mockResults.apiEndpoints.length} API endpoints via directory busting and crawler.`, 'success');
         } else if (module === 'osint') {
-          mockResults.osintData = ['Found public GitHub repository containing config files', 'Exposed mail server info in WHOIS', 'Found 3 developer profiles on LinkedIn'];
+          mockResults.osintData = [
+            { 
+              label: 'Public GitHub Repository', 
+              description: 'Exposed repository containing configuration templates and potential secret keys.', 
+              url: `https://github.com/search?q=${target.host}`,
+              type: 'code'
+            },
+            { 
+              label: 'Exposed Mail Server', 
+              description: 'Publicly accessible mail server information found in WHOIS records.', 
+              url: `https://who.is/whois/${target.host}`,
+              type: 'info'
+            },
+            { 
+              label: 'Developer Profiles', 
+              description: 'Identified 3 key developer profiles linked to this domain for potential social engineering mapping.', 
+              url: `https://www.linkedin.com/search/results/people/?keywords=${target.host}`,
+              type: 'social'
+            },
+            {
+              label: 'Data Leak Check',
+              description: 'Recent credential dump contains 12 unique emails associated with this domain.',
+              url: 'https://haveibeenpwned.com/',
+              type: 'leak'
+            }
+          ];
           addLog(`OSINT: discovered potential data leaks and personnel mapping.`, 'warn');
         }
 
