@@ -10,6 +10,7 @@ import {
   Shield, 
   Trash2, 
   Play, 
+  Square,
   Settings2, 
   FileText, 
   Globe, 
@@ -77,8 +78,8 @@ export default function Dashboard() {
     setSelectedTargetId, 
     addTarget, 
     deleteTarget, 
-    toggleModule, 
     runScan,
+    stopScan,
     isBackendConnected
   } = useScannerStore();
 
@@ -106,7 +107,7 @@ export default function Dashboard() {
     switch (status) {
       case 'running': return <Badge className="bg-primary/20 text-primary border-primary/30 animate-pulse">Running</Badge>;
       case 'completed': return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Complete</Badge>;
-      case 'failed': return <Badge variant="destructive">Failed</Badge>;
+      case 'failed': return <Badge variant="destructive">Failed / Stopped</Badge>;
       default: return <Badge variant="outline">Idle</Badge>;
     }
   };
@@ -118,11 +119,6 @@ export default function Dashboard() {
       case 'leak': return <AlertTriangle className="text-red-400" size={18} />;
       default: return <Unplug className="text-yellow-500" size={18} />;
     }
-  };
-
-  const handleOpenEndpoint = (host: string, path: string) => {
-    const protocol = host.includes('://') ? '' : 'https://';
-    window.open(`${protocol}${host}${path}`, '_blank');
   };
 
   return (
@@ -306,18 +302,25 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Button 
-                  onClick={() => runScan(selectedTarget.id)} 
-                  disabled={selectedTarget.status === 'running' || !isBackendConnected}
-                  className={`gap-2 ${isBackendConnected ? 'bg-accent text-white hover:bg-accent/90' : 'bg-muted text-muted-foreground'}`}
-                >
-                  {selectedTarget.status === 'running' ? (
-                    <Loader2 size={18} className="animate-spin" />
-                  ) : (
+                {selectedTarget.status === 'running' ? (
+                  <Button 
+                    variant="destructive"
+                    onClick={() => stopScan(selectedTarget.id)}
+                    className="gap-2"
+                  >
+                    <Square size={16} fill="currentColor" />
+                    Stop Scan
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={() => runScan(selectedTarget.id)} 
+                    disabled={!isBackendConnected}
+                    className={`gap-2 ${isBackendConnected ? 'bg-accent text-white hover:bg-accent/90' : 'bg-muted text-muted-foreground'}`}
+                  >
                     <Play size={18} />
-                  )}
-                  {selectedTarget.status === 'completed' ? 'Re-run Scan' : 'Start Sequence'}
-                </Button>
+                    {selectedTarget.status === 'completed' || selectedTarget.status === 'failed' ? 'Restart Sequence' : 'Start Sequence'}
+                  </Button>
+                )}
               </div>
             </header>
 
@@ -325,10 +328,10 @@ export default function Dashboard() {
               <Tabs defaultValue="overview" className="w-full">
                 <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
                   <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
-                  <TabsTrigger value="network" className="gap-2" disabled={!selectedTarget.results?.portScanResults}><Network size={14} /> Network</TabsTrigger>
-                  <TabsTrigger value="discovery" className="gap-2" disabled={!selectedTarget.results?.subdomains}><Search size={14} /> Discovery</TabsTrigger>
-                  <TabsTrigger value="surface" className="gap-2" disabled={!selectedTarget.results?.techStack}><Cpu size={14} /> Web Surface</TabsTrigger>
-                  <TabsTrigger value="snapshots" className="gap-2" disabled={!selectedTarget.results?.screenshots}><Camera size={14} /> Snapshots</TabsTrigger>
+                  <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
+                  <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
+                  <TabsTrigger value="surface" className="gap-2"><Cpu size={14} /> Web Surface</TabsTrigger>
+                  <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                   <TabsTrigger value="modules" className="gap-2"><Settings2 size={14} /> Modules</TabsTrigger>
                   <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
                   <TabsTrigger value="report" className="gap-2" disabled={!selectedTarget.results?.riskAnalysis}><FileText size={14} /> Risk Analysis</TabsTrigger>
@@ -397,40 +400,44 @@ export default function Dashboard() {
                 </TabsContent>
 
                 <TabsContent value="network" className="mt-6 space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Network size={20} className="text-primary" />
-                        Service Version Scan results (nmap -sCV)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Port</TableHead>
-                            <TableHead>Service</TableHead>
-                            <TableHead>State</TableHead>
-                            <TableHead>Version Info</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {selectedTarget.results?.portScanResults?.map((res, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="font-code font-bold text-primary">{res.port}</TableCell>
-                              <TableCell className="capitalize">{res.service}</TableCell>
-                              <TableCell>
-                                <Badge variant={res.state === 'open' ? 'default' : 'outline'} className={res.state === 'open' ? 'bg-green-500 hover:bg-green-600' : ''}>
-                                  {res.state}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground font-code text-xs">{res.version || 'Unknown'}</TableCell>
+                  {selectedTarget.results?.portScanResults?.length ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Network size={20} className="text-primary" />
+                          Service Version Scan results (nmap -sCV)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Port</TableHead>
+                              <TableHead>Service</TableHead>
+                              <TableHead>State</TableHead>
+                              <TableHead>Version Info</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedTarget.results?.portScanResults?.map((res, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="font-code font-bold text-primary">{res.port}</TableCell>
+                                <TableCell className="capitalize">{res.service}</TableCell>
+                                <TableCell>
+                                  <Badge variant={res.state === 'open' ? 'default' : 'outline'} className={res.state === 'open' ? 'bg-green-500 hover:bg-green-600' : ''}>
+                                    {res.state}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground font-code text-xs">{res.version || 'Unknown'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="py-20 text-center opacity-40">Awaiting network scan results...</div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="discovery" className="mt-6 space-y-6">
@@ -441,14 +448,14 @@ export default function Dashboard() {
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-2">
-                          {selectedTarget.results?.subdomains?.map((sub, i) => (
+                          {selectedTarget.results?.subdomains?.length ? selectedTarget.results.subdomains.map((sub, i) => (
                             <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border">
                               <span className="font-code text-sm">{sub}</span>
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`https://${sub}`, '_blank')}>
                                 <Globe size={14} />
                               </Button>
                             </div>
-                          ))}
+                          )) : <p className="text-xs text-muted-foreground italic">No subdomains discovered yet.</p>}
                         </div>
                       </CardContent>
                     </Card>
@@ -520,14 +527,6 @@ export default function Dashboard() {
                           {selectedTarget.results?.apiEndpoints?.map((endpoint, i) => (
                             <div key={i} className="group flex items-center justify-between p-2 rounded bg-card border border-border hover:border-primary/40 transition-colors">
                               <code className="text-xs text-primary">{endpoint}</code>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-6 w-6"
-                                onClick={() => handleOpenEndpoint(selectedTarget.host, endpoint)}
-                              >
-                                <ExternalLink size={12} />
-                              </Button>
                             </div>
                           ))}
                         </div>
@@ -538,7 +537,7 @@ export default function Dashboard() {
 
                 <TabsContent value="snapshots" className="mt-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {selectedTarget.results?.screenshots?.map((url, i) => (
+                    {selectedTarget.results?.screenshots?.length ? selectedTarget.results.screenshots.map((url, i) => (
                       <Card key={i} className="overflow-hidden group">
                         <div className="relative aspect-video bg-black/50">
                           <Image 
@@ -554,12 +553,14 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </Card>
-                    ))}
+                    )) : (
+                      <div className="col-span-full py-20 text-center opacity-40">No snapshots captured yet.</div>
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="modules" className="mt-6">
-                  <ModuleConfig target={selectedTarget} onToggle={(mod) => toggleModule(selectedTarget.id, mod)} />
+                  <ModuleConfig target={selectedTarget} onToggle={(mod) => {}} />
                 </TabsContent>
 
                 <TabsContent value="logs" className="mt-6">

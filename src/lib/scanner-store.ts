@@ -58,6 +58,55 @@ export function useScannerStore() {
     }
   }, [settings?.apiUrl, isBackendConnected]);
 
+  const pollStatus = useCallback(async (targetId: string) => {
+    if (!settings?.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    if (!url) return;
+    try {
+      const response = await fetch(`${url}/targets/${targetId}`, { 
+        cache: 'no-store',
+        mode: 'cors'
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        setTargets(prev => prev.map(t => t.id === targetId ? updated : t));
+
+        if (updated.status === 'completed') {
+          if (pollingRefs.current[targetId]) {
+            clearInterval(pollingRefs.current[targetId]);
+            delete pollingRefs.current[targetId];
+          }
+          
+          if (updated.results && !updated.results.riskAnalysis && (updated.results.portScanResults?.length > 0 || updated.results.subdomains?.length > 0)) {
+            try {
+              const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
+                target: updated.host,
+                ...updated.results
+              });
+              
+              await fetch(`${url}/targets/${targetId}/risk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ riskAnalysis }),
+                mode: 'cors'
+              });
+              fetchTargets();
+            } catch (aiErr) {
+              console.error("AI Analysis failed:", aiErr);
+            }
+          }
+        } else if (updated.status === 'failed') {
+          if (pollingRefs.current[targetId]) {
+            clearInterval(pollingRefs.current[targetId]);
+            delete pollingRefs.current[targetId];
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Polling error:", e);
+    }
+  }, [settings?.apiUrl, fetchTargets]);
+
   useEffect(() => {
     checkHealth();
     const interval = setInterval(() => {
@@ -112,56 +161,6 @@ export function useScannerStore() {
     }
   }, [settings?.apiUrl, selectedTargetId]);
 
-  const pollStatus = useCallback(async (targetId: string) => {
-    if (!settings?.apiUrl) return;
-    const url = settings.apiUrl.replace(/\/$/, "");
-    if (!url) return;
-    try {
-      const response = await fetch(`${url}/targets/${targetId}`, { 
-        cache: 'no-store',
-        mode: 'cors'
-      });
-      if (response.ok) {
-        const updated = await response.json();
-        setTargets(prev => prev.map(t => t.id === targetId ? updated : t));
-
-        if (updated.status === 'completed') {
-          if (pollingRefs.current[targetId]) {
-            clearInterval(pollingRefs.current[targetId]);
-            delete pollingRefs.current[targetId];
-          }
-          
-          // Only run AI analysis if we have real results and haven't analyzed yet
-          if (updated.results && !updated.results.riskAnalysis && (updated.results.portScanResults?.length > 0 || updated.results.subdomains?.length > 0)) {
-            try {
-              const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
-                target: updated.host,
-                ...updated.results
-              });
-              
-              await fetch(`${url}/targets/${targetId}/risk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ riskAnalysis }),
-                mode: 'cors'
-              });
-              fetchTargets();
-            } catch (aiErr) {
-              console.error("AI Analysis failed:", aiErr);
-            }
-          }
-        } else if (updated.status === 'failed') {
-          if (pollingRefs.current[targetId]) {
-            clearInterval(pollingRefs.current[targetId]);
-            delete pollingRefs.current[targetId];
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Polling error:", e);
-    }
-  }, [settings?.apiUrl, fetchTargets]);
-
   const runScan = useCallback(async (targetId: string) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
@@ -189,6 +188,27 @@ export function useScannerStore() {
     }
   }, [settings?.apiUrl, settings?.scanDefaults, settings?.apiKeys, pollStatus, isBackendConnected, fetchTargets]);
 
+  const stopScan = useCallback(async (targetId: string) => {
+    if (!settings?.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    try {
+      const response = await fetch(`${url}/targets/${targetId}/stop`, {
+        method: 'POST',
+        mode: 'cors'
+      });
+      if (response.ok) {
+        if (pollingRefs.current[targetId]) {
+          clearInterval(pollingRefs.current[targetId]);
+          delete pollingRefs.current[targetId];
+        }
+        fetchTargets();
+        toast({ title: "Scan Stopped", description: "Termination request sent." });
+      }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Error", description: "Failed to stop scan." });
+    }
+  }, [settings?.apiUrl, fetchTargets]);
+
   return {
     targets,
     selectedTargetId,
@@ -196,6 +216,7 @@ export function useScannerStore() {
     addTarget,
     deleteTarget,
     runScan,
+    stopScan,
     isBackendConnected,
     refresh: fetchTargets
   };

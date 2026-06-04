@@ -8,16 +8,11 @@ CypherRecon is een dashboard voor het beheren van doelwit-reconnaissance. Het sc
 ### 1. Vereisten
 - Installeer **Nmap** en zorg dat het in je systeem-pad staat (`nmap --version`).
 - Installeer **Subfinder** voor echte subdomain discovery:
-  ```bash
-  # Go moet geïnstalleerd zijn
-  go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-  ```
-  **BELANGRIJK:** Voeg de Go bin-map toe aan je PATH (voeg dit toe aan je `.bashrc` of `.zshrc`):
-  `export PATH=$PATH:$(go env GOPATH)/bin`
-
+  `go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest`
 - Installeer Python afhankelijkheden:
   ```bash
-  pip install fastapi uvicorn pydantic httpx
+  pip install fastapi uvicorn pydantic httpx playwright
+  playwright install chromium
   ```
 - **API Key**: Haal een gratis API-key op via [Google AI Studio](https://aistudio.google.com/app/apikey) en zet deze in het `.env` bestand in de hoofdmap van dit project:
   `GOOGLE_GENAI_API_KEY=jouw_sleutel_hier`
@@ -27,7 +22,7 @@ Sla de onderstaande code op als `main.py` op je lokale machine en start deze:
 `uvicorn main:app --host 0.0.0.0 --port 5000`
 
 ```python
-import uuid, time, asyncio, subprocess, json, httpx, os, shutil
+import uuid, time, asyncio, subprocess, json, httpx, os, shutil, base64
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -35,7 +30,6 @@ from typing import List, Optional, Dict
 
 app = FastAPI()
 
-# CRITICAL: CORS moet aanstaan zodat de frontend met deze lokale service kan praten
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,7 +39,7 @@ app.add_middleware(
 )
 
 # In-memory opslag
-db = {"targets": {}}
+db = {"targets": {}, "stop_flags": set()}
 
 class TargetCreate(BaseModel):
     host: str
@@ -54,7 +48,7 @@ class TargetCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok", "engine": "CypherRecon Core v1.2"}
+    return {"status": "ok", "engine": "CypherRecon Core v1.3"}
 
 @app.get("/targets")
 def get_targets(): 
@@ -78,11 +72,24 @@ def add_target(t: TargetCreate):
 @app.post("/targets/{id}/scan")
 def run_scan(id: str, background_tasks: BackgroundTasks):
     if id in db["targets"]:
+        if id in db["stop_flags"]: db["stop_flags"].remove(id)
         db["targets"][id]["status"] = "running"
         db["targets"][id]["progress"] = 0
         db["targets"][id]["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": []}
         background_tasks.add_task(execute_full_workflow, id)
         return {"status": "started"}
+    return {"error": "not found"}, 404
+
+@app.post("/targets/{id}/stop")
+def stop_scan(id: str):
+    if id in db["targets"]:
+        db["stop_flags"].add(id)
+        db["targets"][id]["status"] = "failed"
+        db["targets"][id]["results"]["logs"].append({
+            "id": str(uuid.uuid4()), "timestamp": int(time.time()*1000),
+            "message": "Scan termination requested by user.", "type": "warn"
+        })
+        return {"status": "stopping"}
     return {"error": "not found"}, 404
 
 @app.post("/targets/{id}/risk")
@@ -108,124 +115,96 @@ async def execute_full_workflow(id: str):
             "message": msg, "type": type
         })
 
+    def is_stopped():
+        return id in db["stop_flags"]
+
     try:
         # Module 1: Subdomain Enumeration
-        if modules.get("subdomain_enumeration"):
+        if modules.get("subdomain_enumeration") and not is_stopped():
             t["activeModule"] = "subdomain_enumeration"
             log(f"Starting subdomain discovery for {host}...")
-            
-            # Zoek naar subfinder binary
-            binary = shutil.which('subfinder')
-            if not binary:
-                # Probeer veelvoorkomende Go installatiepaden
-                go_path = os.path.join(os.path.expanduser("~"), "go", "bin", "subfinder")
-                if os.path.exists(go_path):
-                    binary = go_path
-            
-            if binary:
-                try:
-                    log(f"Using subfinder binary at: {binary}")
-                    cmd = [binary, '-d', host, '-silent']
-                    process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                    stdout, stderr = await process.communicate()
-                    if process.returncode == 0:
-                        subs = stdout.decode().strip().split('\n')
-                        t["results"]["subdomains"] = [s for s in subs if s]
-                        log(f"Subfinder complete. Discovered {len(t['results']['subdomains'])} subdomains.", "success")
-                    else:
-                        log(f"Subfinder error: {stderr.decode()}", "warn")
-                except Exception as e:
-                    log(f"Failed to run subfinder: {str(e)}", "error")
-            else:
-                log("Subfinder binary not found in PATH or ~/go/bin/. Run 'go install ...' and check instructions.", "warn")
-            
+            binary = shutil.which('subfinder') or os.path.join(os.path.expanduser("~"), "go", "bin", "subfinder")
+            if os.path.exists(binary):
+                cmd = [binary, '-d', host, '-silent']
+                process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await process.communicate()
+                if not is_stopped():
+                    subs = stdout.decode().strip().split('\n')
+                    t["results"]["subdomains"] = [s for s in subs if s]
+                    log(f"Discovered {len(t['results']['subdomains'])} subdomains.", "success")
             t["progress"] = 20
 
-        # Module 2: Two-Stage Port Scanning (FAST -> DEEP)
-        if modules.get("port_scanning"):
+        # Module 2: Port Scanning
+        if modules.get("port_scanning") and not is_stopped():
             t["activeModule"] = "port_scanning"
-            log(f"Stage 1: Fast discovery of all 65,535 ports on {host}...")
-            
+            log(f"Scanning all 65,535 ports on {host}...")
             cmd_fast = ['nmap', '-p-', '--open', '-T4', host]
-            process = await asyncio.create_subprocess_exec(*cmd_fast, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            stdout, _ = await process.communicate()
+            proc = await asyncio.create_subprocess_exec(*cmd_fast, stdout=asyncio.subprocess.PIPE)
+            stdout, _ = await proc.communicate()
+            
+            if is_stopped(): return
             
             found_ports = []
-            if process.returncode == 0:
-                output = stdout.decode()
-                for line in output.split('\n'):
-                    if "/tcp" in line or "/udp" in line:
-                        port = line.split('/')[0].strip()
-                        if port.isdigit():
-                            found_ports.append(port)
+            for line in stdout.decode().split('\n'):
+                if "/tcp" in line or "/udp" in line:
+                    port = line.split('/')[0].strip()
+                    if port.isdigit(): found_ports.append(port)
             
-            if not found_ports:
-                log("No open ports found. The target might be down or blocking ICMP/discovery.", "warn")
-                t["progress"] = 50
-            else:
-                log(f"Found active ports: {', '.join(found_ports)}. Starting Stage 2 (Service Analysis)...", "success")
-                t["progress"] = 35
-                
+            if found_ports and not is_stopped():
+                log(f"Found {len(found_ports)} ports. Running service analysis...", "success")
                 ports_arg = ",".join(found_ports)
                 cmd_deep = ['nmap', '-sCV', '-p', ports_arg, host]
-                process = await asyncio.create_subprocess_exec(*cmd_deep, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                stdout, _ = await process.communicate()
+                proc_deep = await asyncio.create_subprocess_exec(*cmd_deep, stdout=asyncio.subprocess.PIPE)
+                stdout_deep, _ = await proc_deep.communicate()
                 
-                if process.returncode == 0:
-                    output = stdout.decode()
+                if not is_stopped():
                     ports_results = []
-                    for line in output.split('\n'):
+                    for line in stdout_deep.decode().split('\n'):
                         if "/tcp" in line or "/udp" in line:
                             parts = line.split()
                             if len(parts) >= 3:
-                                port_proto = parts[0].split('/')
-                                port_val = int(port_proto[0])
-                                state = parts[1]
-                                service = parts[2]
-                                version = " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
-                                ports_results.append({"port": port_val, "service": service, "state": state, "version": version})
+                                port_val = int(parts[0].split('/')[0])
+                                ports_results.append({"port": port_val, "service": parts[2], "state": parts[1], "version": " ".join(parts[3:])})
                     t["results"]["portScanResults"] = ports_results
-                    log(f"Deep scan complete. Identified {len(ports_results)} services.", "success")
-
             t["progress"] = 50
 
-        # Module 3: OSINT Intelligence
-        if modules.get("osint"):
+        # Module 3: OSINT
+        if modules.get("osint") and not is_stopped():
             t["activeModule"] = "osint"
-            log("Building OSINT intelligence profile...")
+            log("Generating OSINT profile...")
             t["results"]["osintData"] = [
                 {"label": "GitHub Search", "description": f"Target specific code patterns for {host}", "url": f"https://github.com/search?q={host}", "type": "code"},
-                {"label": "Shodan Historical", "description": "View historical IP and banner data", "url": f"https://www.shodan.io/search?query={host}", "type": "info"},
-                {"label": "LinkedIn Profile", "description": "Identify associated staff and infrastructure managers", "url": f"https://www.linkedin.com/search/results/all/?keywords={host}", "type": "social"}
+                {"label": "Shodan", "description": "Historical IP data", "url": f"https://www.shodan.io/search?query={host}", "type": "info"}
             ]
             t["progress"] = 70
 
-        # Module 4: Tech Stack Analysis
-        if modules.get("tech_stack"):
-            t["activeModule"] = "tech_stack"
-            log(f"Analyzing server headers and fingerprints for {host}...")
+        # Module 4: Screenshots (Using Playwright)
+        if modules.get("screenshotting") and not is_stopped():
+            t["activeModule"] = "screenshotting"
+            log(f"Taking visual snapshot of {host}...")
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                from playwright.async_api import async_playwright
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch()
+                    page = await browser.new_page()
                     target_url = host if "://" in host else f"https://{host}"
-                    resp = await client.get(target_url, follow_redirects=True)
-                    server = resp.headers.get("Server", "Unknown")
-                    framework = resp.headers.get("X-Powered-By", "Unknown")
-                    tech = [f"Web Server: {server}"]
-                    if framework != "Unknown": tech.append(f"Framework: {framework}")
-                    t["results"]["techStack"] = tech
-                    log(f"Tech stack detected: {', '.join(tech)}", "success")
+                    await page.goto(target_url, timeout=30000)
+                    screenshot_bytes = await page.screenshot()
+                    b64_img = base64.b64encode(screenshot_bytes).decode()
+                    t["results"]["screenshots"].append(f"data:image/png;base64,{b64_img}")
+                    await browser.close()
+                log("Snapshot captured successfully.", "success")
             except Exception as e:
-                log(f"Tech analysis failed (HTTPS connection error)", "warn")
-                t["results"]["techStack"] = ["Web Server: Unknown"]
+                log(f"Screenshot failed: {str(e)}", "warn")
             t["progress"] = 90
 
-        # Finalize
-        t["status"] = "completed"
-        t["progress"] = 100
-        t["lastRunAt"] = int(time.time()*1000)
-        log("Full reconnaissance sequence finished.", "success")
+        if not is_stopped():
+            t["status"] = "completed"
+            t["progress"] = 100
+            t["lastRunAt"] = int(time.time()*1000)
+            log("Sequence finished.", "success")
 
     except Exception as e:
-        log(f"Fatal Workflow Exception: {str(e)}", "error")
+        log(f"Error: {str(e)}", "error")
         t["status"] = "failed"
 ```
