@@ -42,7 +42,7 @@ export function useScannerStore() {
   const fetchGroups = useCallback(async () => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
-    if (!isBackendConnected || !url) return;
+    if (!url) return;
     try {
       const response = await fetch(`${url}/targets`, { 
         cache: 'no-store',
@@ -55,7 +55,7 @@ export function useScannerStore() {
     } catch (e) {
       console.error("Fetch groups failed:", e);
     }
-  }, [settings?.apiUrl, isBackendConnected]);
+  }, [settings?.apiUrl]);
 
   const pollStatus = useCallback(async (groupId: string) => {
     if (!settings?.apiUrl) return;
@@ -70,23 +70,43 @@ export function useScannerStore() {
         const updatedGroup: TargetGroup = await response.json();
         setTargetGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
 
-        // Check if any child target needs AI analysis
+        // Check each child target individually for AI analysis
         for (const child of updatedGroup.childTargets) {
           if (child.status === 'completed' && child.results && !child.results.riskAnalysis) {
             // Check if there is enough data for analysis
-            if (child.results.portScanResults?.length || child.results.subdomains?.length || child.results.webSurface) {
+            const hasData = (child.results.portScanResults?.length || 0) > 0 || 
+                            (child.results.subdomains?.length || 0) > 0 || 
+                            child.results.webSurface !== null ||
+                            child.results.urlHarvesting !== null;
+
+            if (hasData) {
+              console.log(`Triggering AI Analysis for child target: ${child.host}`);
               try {
                 const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
                   target: child.host,
                   ...child.results
                 });
                 
+                // Submit the analysis back to the engine so it persists
                 await fetch(`${url}/targets/${groupId}/risk`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ childId: child.id, riskAnalysis }),
                   mode: 'cors'
                 });
+
+                // Update local state immediately to avoid waiting for next poll
+                setTargetGroups(prev => prev.map(g => {
+                  if (g.id === groupId) {
+                    return {
+                      ...g,
+                      childTargets: g.childTargets.map(ct => 
+                        ct.id === child.id ? { ...ct, results: { ...ct.results, riskAnalysis } } : ct
+                      )
+                    };
+                  }
+                  return g;
+                }));
               } catch (aiErr) {
                 console.error("AI Analysis failed for child:", child.host, aiErr);
               }
@@ -111,12 +131,10 @@ export function useScannerStore() {
     checkHealth();
     const interval = setInterval(() => {
       checkHealth();
-      if (isBackendConnected) {
-        fetchGroups();
-      }
+      fetchGroups();
     }, 4000);
     return () => clearInterval(interval);
-  }, [checkHealth, fetchGroups, isBackendConnected]);
+  }, [checkHealth, fetchGroups]);
 
   const addTargetGroup = useCallback(async (name: string, hosts: string[], mode: ReconMode, modules: Record<ReconModuleType, boolean>, credentials?: Credential[]) => {
     if (!settings?.apiUrl) return;
@@ -186,6 +204,7 @@ export function useScannerStore() {
           pollingRefs.current[groupId] = setInterval(() => pollStatus(groupId), 2000);
         }
         fetchGroups();
+        toast({ title: "Scan Initiated", description: "Sequence started on backend engine." });
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Execution Error", description: "Lost connection to backend engine." });

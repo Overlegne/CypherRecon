@@ -25,6 +25,9 @@ export function TLSAnalysisView({ data }: { data: TLSData }) {
     }
   };
 
+  // Define expected protocols to show completeness
+  const ALL_VERSIONS = ["SSL 3.0", "TLS 1.0", "TLS 1.1", "TLS 1.2", "TLS 1.3"];
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -65,9 +68,9 @@ export function TLSAnalysisView({ data }: { data: TLSData }) {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Globe size={18} className="text-primary" />
-              Protocol Support Analysis
+              Protocol Support Matrix
             </CardTitle>
-            <CardDescription>Handshake tests across all major TLS/SSL versions.</CardDescription>
+            <CardDescription>Status of various SSL/TLS versions on this target.</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -79,27 +82,30 @@ export function TLSAnalysisView({ data }: { data: TLSData }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.versions.map((v, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-bold">{v.version}</TableCell>
-                    <TableCell>
-                      {v.supported ? (
-                        <div className="flex items-center gap-2">
-                          <Lock size={14} className={v.severity === 'high' ? "text-red-500" : v.severity === 'medium' ? "text-yellow-500" : "text-green-500"} />
-                          {getSeverityBadge(v.severity)}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Unlock size={14} />
-                          <span className="text-xs">Not Supported</span>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-code text-[10px] text-muted-foreground">
-                      {v.cipher || '-'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {ALL_VERSIONS.map((version) => {
+                  const v = data.versions.find(dv => dv.version === version);
+                  return (
+                    <TableRow key={version}>
+                      <TableCell className="font-bold">{version}</TableCell>
+                      <TableCell>
+                        {v?.supported ? (
+                          <div className="flex items-center gap-2">
+                            <Lock size={14} className={v.severity === 'high' ? "text-red-500" : v.severity === 'medium' ? "text-yellow-500" : "text-green-500"} />
+                            {getSeverityBadge(v.severity)}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Unlock size={14} />
+                            <span className="text-xs">Not Supported</span>
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-code text-[10px] text-muted-foreground">
+                        {v?.cipher || '-'}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -109,9 +115,9 @@ export function TLSAnalysisView({ data }: { data: TLSData }) {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Terminal size={18} className="text-accent" />
-              Cipher Suites Findings
+              Detailed Cipher Findings
             </CardTitle>
-            <CardDescription>Observed or supported cipher strength analysis.</CardDescription>
+            <CardDescription>Cryptographic algorithms identified during handshakes.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -122,7 +128,7 @@ export function TLSAnalysisView({ data }: { data: TLSData }) {
                 </div>
               )) : (
                 <div className="py-10 text-center text-muted-foreground italic text-sm">
-                  No specific cipher details captured.
+                  No specific cipher suites identified.
                 </div>
               )}
             </div>

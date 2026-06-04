@@ -13,19 +13,18 @@ import {
   Settings2, 
   Clock,
   LayoutDashboard,
-  Search,
   Network,
   Globe,
   Wifi,
   WifiOff,
-  Settings,
   Camera,
   PlusCircle,
   XCircle,
   Layers,
-  KeyRound,
   Link as LinkIcon,
-  ShieldEllipsis
+  ShieldEllipsis,
+  BrainCircuit,
+  Settings
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -46,6 +45,7 @@ import { WebSurfaceView } from './WebSurfaceView';
 import { TLSAnalysisView } from './TLSAnalysisView';
 import { URLHarvestingView } from './URLHarvestingView';
 import { CORSAuditView } from './CORSAuditView';
+import { RiskAnalysisView } from './RiskAnalysisView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -389,6 +389,9 @@ export default function Dashboard() {
                     {group.lastRunAt ? formatDistanceToNow(group.lastRunAt, { addSuffix: true }) : 'Never run'}
                    </span>
                 </div>
+                {group.status === 'running' && (
+                  <Progress value={group.progress} className="h-1 mt-3" />
+                )}
               </div>
             ))}
           </div>
@@ -410,7 +413,7 @@ export default function Dashboard() {
         {selectedGroup ? (
           <>
             <header className="p-6 border-b border-border bg-card/10 backdrop-blur-lg flex items-center justify-between">
-              <div>
+              <div className="flex-1">
                 <div className="flex items-center gap-3 mb-1">
                   <h2 className="text-2xl font-headline font-bold">{selectedGroup.name}</h2>
                   {getStatusBadge(selectedGroup.status)}
@@ -422,6 +425,12 @@ export default function Dashboard() {
                     {selectedGroup.mode} Mode
                   </span>
                 </div>
+                {selectedGroup.status === 'running' && (
+                  <div className="mt-4 flex items-center gap-3 max-w-md">
+                    <Progress value={selectedGroup.progress} className="h-2 flex-1" />
+                    <span className="text-[10px] font-code font-bold text-primary">{selectedGroup.progress}%</span>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 {selectedGroup.status === 'running' ? (
@@ -452,6 +461,7 @@ export default function Dashboard() {
                   <Globe size={12} />
                   {child.host}
                   {child.status === 'running' && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
+                  {child.status === 'completed' && <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />}
                 </button>
               ))}
             </div>
@@ -461,11 +471,12 @@ export default function Dashboard() {
                 <Tabs defaultValue="overview" className="w-full">
                   <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
                     <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
+                    <TabsTrigger value="risk" className="gap-2"><BrainCircuit size={14} /> AI Analysis</TabsTrigger>
                     <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
                     <TabsTrigger value="harvesting" className="gap-2"><LinkIcon size={14} /> URL Harvesting</TabsTrigger>
                     <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
                     <TabsTrigger value="cors" className="gap-2"><ShieldEllipsis size={14} /> CORS Audit</TabsTrigger>
-                    <TabsTrigger value="tls" className="gap-2"><KeyRound size={14} /> SSL/TLS</TabsTrigger>
+                    <TabsTrigger value="tls" className="gap-2"><Shield size={14} /> SSL/TLS</TabsTrigger>
                     <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                     <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
                   </TabsList>
@@ -508,6 +519,16 @@ export default function Dashboard() {
                             </CardContent>
                           </Card>
                         </div>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="risk" className="mt-6">
+                    {selectedChild.results?.riskAnalysis ? (
+                      <RiskAnalysisView data={selectedChild.results.riskAnalysis} />
+                    ) : (
+                      <div className="py-20 text-center opacity-40">
+                         {selectedChild.status === 'completed' ? "AI Analysis is being generated..." : "Waiting for scan to complete..."}
                       </div>
                     )}
                   </TabsContent>
