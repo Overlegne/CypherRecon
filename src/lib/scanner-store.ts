@@ -15,35 +15,37 @@ export function useScannerStore() {
   const pollingRefs = useRef<Record<string, NodeJS.Timeout>>({});
 
   const checkHealth = useCallback(async () => {
-    if (!settings.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, ""); // Verwijder eventuele trailing slash
+    if (!url) return;
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       
-      const res = await fetch(`${settings.apiUrl}/health`, { 
+      const res = await fetch(`${url}/health`, { 
         signal: controller.signal,
         cache: 'no-store',
-        mode: 'cors'
+        mode: 'cors',
+        headers: { 'Accept': 'application/json' }
       });
       
       clearTimeout(timeoutId);
       if (res.ok) {
         setIsBackendConnected(true);
       } else {
-        console.warn(`Health check failed with status: ${res.status}`);
         setIsBackendConnected(false);
       }
     } catch (e) {
-      console.error("Backend health check failed. Ensure the Python server is running and CORS is enabled.", e);
+      // Alleen loggen als de status verandert om spam te voorkomen
       setIsBackendConnected(false);
     }
   }, [settings.apiUrl]);
 
   const fetchTargets = useCallback(async () => {
-    if (!isBackendConnected || !settings.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    if (!isBackendConnected || !url) return;
     try {
-      const response = await fetch(`${settings.apiUrl}/targets`, { 
+      const response = await fetch(`${url}/targets`, { 
         cache: 'no-store',
         mode: 'cors'
       });
@@ -52,7 +54,7 @@ export function useScannerStore() {
         setTargets(data);
       }
     } catch (e) {
-      console.error("Failed to fetch targets from backend:", e);
+      console.error("Fetch targets failed:", e);
     }
   }, [settings.apiUrl, isBackendConnected]);
 
@@ -60,15 +62,18 @@ export function useScannerStore() {
     checkHealth();
     const interval = setInterval(() => {
       checkHealth();
-      fetchTargets();
-    }, 5000);
+      if (isBackendConnected) {
+        fetchTargets();
+      }
+    }, 4000);
     return () => clearInterval(interval);
-  }, [checkHealth, fetchTargets]);
+  }, [checkHealth, fetchTargets, isBackendConnected]);
 
   const addTarget = useCallback(async (host: string, mode: ReconMode, modules: Record<ReconModuleType, boolean>) => {
-    if (!settings.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    if (!url) return;
     try {
-      const response = await fetch(`${settings.apiUrl}/targets`, {
+      const response = await fetch(`${url}/targets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host, mode, modules }),
@@ -79,19 +84,20 @@ export function useScannerStore() {
         const newTarget = await response.json();
         setTargets(prev => [newTarget, ...prev]);
         setSelectedTargetId(newTarget.id);
-        toast({ title: "Target Created", description: `Added ${host} to pool.` });
+        toast({ title: "Target Created", description: `Added ${host} to scanning pool.` });
       } else {
-        throw new Error("Failed to create target");
+        throw new Error("Backend rejected target creation");
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Connection Error", description: "Backend is unreachable or returned an error." });
+      toast({ variant: "destructive", title: "Error", description: "Backend connection failed." });
     }
   }, [settings.apiUrl]);
 
   const deleteTarget = useCallback(async (id: string) => {
-    if (!settings.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    if (!url) return;
     try {
-      const response = await fetch(`${settings.apiUrl}/targets/${id}`, { 
+      const response = await fetch(`${url}/targets/${id}`, { 
         method: 'DELETE',
         mode: 'cors'
       });
@@ -105,9 +111,10 @@ export function useScannerStore() {
   }, [settings.apiUrl, selectedTargetId]);
 
   const pollStatus = useCallback(async (targetId: string) => {
-    if (!settings.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    if (!url) return;
     try {
-      const response = await fetch(`${settings.apiUrl}/targets/${targetId}`, { 
+      const response = await fetch(`${url}/targets/${targetId}`, { 
         cache: 'no-store',
         mode: 'cors'
       });
@@ -121,18 +128,24 @@ export function useScannerStore() {
             delete pollingRefs.current[targetId];
           }
           
+          // Voer AI Analyse uit op ECHTE data
           if (updated.results && !updated.results.riskAnalysis) {
-            const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
-              target: updated.host,
-              ...updated.results
-            });
-            
-            fetch(`${settings.apiUrl}/targets/${targetId}/risk`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ riskAnalysis }),
-              mode: 'cors'
-            }).then(() => fetchTargets());
+            try {
+              const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
+                target: updated.host,
+                ...updated.results
+              });
+              
+              await fetch(`${url}/targets/${targetId}/risk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ riskAnalysis }),
+                mode: 'cors'
+              });
+              fetchTargets();
+            } catch (aiErr) {
+              console.error("AI Analysis failed:", aiErr);
+            }
           }
         } else if (updated.status === 'failed') {
           if (pollingRefs.current[targetId]) {
@@ -142,18 +155,19 @@ export function useScannerStore() {
         }
       }
     } catch (e) {
-      setIsBackendConnected(false);
+      console.warn("Polling error:", e);
     }
   }, [settings.apiUrl, fetchTargets]);
 
   const runScan = useCallback(async (targetId: string) => {
-    if (!isBackendConnected || !settings.apiUrl) {
-      toast({ variant: "destructive", title: "Backend Offline", description: "Please start your local scanner service." });
+    const url = settings.apiUrl.replace(/\/$/, "");
+    if (!isBackendConnected || !url) {
+      toast({ variant: "destructive", title: "Scanner Offline", description: "Start the local Python service first." });
       return;
     }
 
     try {
-      const response = await fetch(`${settings.apiUrl}/targets/${targetId}/scan`, {
+      const response = await fetch(`${url}/targets/${targetId}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: settings.scanDefaults, keys: settings.apiKeys }),
@@ -167,7 +181,7 @@ export function useScannerStore() {
         fetchTargets();
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Scan Failed", description: "Backend connection lost during initiation." });
+      toast({ variant: "destructive", title: "Execution Error", description: "Lost connection to backend engine." });
     }
   }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus, isBackendConnected, fetchTargets]);
 

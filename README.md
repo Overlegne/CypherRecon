@@ -1,19 +1,20 @@
 
 # CypherRecon | AI-Powered Ethical Reconnaissance
 
-CypherRecon is a production-ready dashboard for managing target reconnaissance. It separates the **Command & Control (UI)** from the **Scanning Engine (Local Backend)**, allowing you to perform real network scans from your local machine while managing them through a modern web interface.
+CypherRecon is een dashboard voor het beheren van target reconnaissance. Het scheidt de **UI** van de **Scanner Engine (Python)**, waardoor je echte scans kunt uitvoeren vanaf je lokale machine.
 
-## 🛠 Setup & Testing Guide
+## 🚀 Snelstartgids (Testen)
 
-### 1. Prerequisites
-- Python 3.9+
-- Node.js 18+
-- **Nmap** geïnstalleerd op je systeem pad (nodig voor echte scans).
+### 1. Voorbereiding
+- Installeer **Nmap** en zorg dat het in je systeem-pad staat (`nmap --version` moet werken in je terminal).
+- Installeer Python dependencies:
+  ```bash
+  pip install fastapi uvicorn pydantic
+  ```
 
-### 2. Start de Echte Python Scanner
-Gebruik dit script om de frontend te koppelen aan echte systeemcommando's. Dit script voert daadwerkelijk `nmap -sV -p 1-1000` uit.
-
-**Belangrijk:** Zorg dat `fastapi` en `uvicorn` zijn geïnstalleerd (`pip install fastapi uvicorn`).
+### 2. Start de Python Scanner
+Sla de onderstaande code op als `main.py` en start deze met:
+`uvicorn main:app --host 0.0.0.0 --port 5000`
 
 ```python
 import uuid, time, asyncio, subprocess, json
@@ -24,16 +25,15 @@ from typing import List, Optional, Dict
 
 app = FastAPI()
 
-# CRITICAL: CORS instellingen voor communicatie met de frontend
+# CRITICAL: Sta verbindingen toe vanuit de browser (CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In productie vervangen door de URL van je frontend
+    allow_origins=["*"], # In productie vervangen door specifiek adres
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# In-memory DB
 db = {"targets": {}}
 
 class TargetCreate(BaseModel):
@@ -43,7 +43,7 @@ class TargetCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok"}
+    return {"status": "ok", "engine": "CypherRecon Core v1.0"}
 
 @app.get("/targets")
 def get_targets(): 
@@ -97,24 +97,28 @@ async def execute_real_nmap(id: str):
         })
 
     try:
-        log(f"Starting deep scan on {host}...", "info")
+        log(f"Initiating deep scan sequence on {host}...", "info")
         t["progress"] = 10
         
-        # ECHTE NMAP CALL
-        process = subprocess.Popen(
-            ['nmap', '-sV', '-p', '1-1000', host], 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE,
-            text=True
+        # ECHTE NMAP CALL: -sV (service detection) -p- (alle poorten)
+        # Voor testen gebruiken we vaak een kleinere range voor snelheid: 1-1000
+        cmd = ['nmap', '-sV', '-p', '1-1000', host]
+        log(f"Executing: {' '.join(cmd)}", "info")
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         
         t["progress"] = 40
-        stdout, stderr = process.communicate()
+        stdout, stderr = await process.communicate()
         
         if process.returncode == 0:
-            log("Nmap sequence completed successfully.", "success")
+            output = stdout.decode()
+            log("Nmap scan completed successfully.", "success")
             ports = []
-            for line in stdout.split('\n'):
+            for line in output.split('\n'):
                 if "/tcp" in line and "open" in line:
                     parts = line.split()
                     port_val = int(parts[0].split('/')[0])
@@ -127,22 +131,14 @@ async def execute_real_nmap(id: str):
             t["status"] = "completed"
             t["lastRunAt"] = int(time.time()*1000)
         else:
-            log(f"Nmap failed: {stderr}", "error")
+            log(f"Nmap error: {stderr.decode()}", "error")
             t["status"] = "failed"
 
     except Exception as e:
-        log(f"Scanner engine error: {str(e)}", "error")
+        log(f"Engine Exception: {str(e)}", "error")
         t["status"] = "failed"
-
-if __name__ == "__main__":
-    import uvicorn
-    # Start de server op port 5000
-    uvicorn.run(app, host="0.0.0.0", port=5000)
 ```
 
-### 3. Hoe te testen
-1. Zorg dat `nmap` is geïnstalleerd op je computer.
-2. Draai het bovenstaande Python script: `python main.py`.
-3. Ga in CypherRecon naar **System Settings** en zet de URL op `http://localhost:5000`.
-4. Controleer of de sidebar nu **ENGINE ONLINE** aangeeft.
-5. Start een scan. De logs en resultaten komen nu rechtstreeks uit de Nmap output op je lokale machine.
+### 3. Troubleshooting
+- Zie je "Engine Offline"? Open de browser console (F12) om te zien of er CORS-fouten zijn.
+- Controleer of je in de CypherRecon Settings de URL op `http://localhost:5000` hebt gezet.
