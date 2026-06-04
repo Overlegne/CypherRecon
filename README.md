@@ -211,12 +211,22 @@ async def execute_full_workflow(id: str):
             headers, _ = build_http_context()
             results = {"urls_tested": [], "ports_used": web_ports, "headers": [], "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}}
             
+            # Normalize target URL base
+            unique_urls = set()
+            for p in web_ports:
+                proto = "https" if p in [443, 8443] else "http"
+                unique_urls.add(f"{proto}://{host}:{p}")
+
             async with httpx.AsyncClient(headers=headers, follow_redirects=True, verify=False, timeout=10) as client:
-                for p in web_ports:
-                    url = f"{'https' if p in [443, 8443] else 'http'}://{host}:{p}"
+                for url in sorted(list(unique_urls)):
                     try:
                         resp = await client.get(url)
-                        results["urls_tested"].append(str(resp.url))
+                        final_url = str(resp.url).rstrip('/')
+                        
+                        # Avoid duplicate normalized URLs
+                        if final_url in results["urls_tested"]:
+                            continue
+                        results["urls_tested"].append(final_url)
                         
                         header_defs = [
                             ("Content-Security-Policy", "high"), ("Strict-Transport-Security", "medium"),
@@ -231,7 +241,7 @@ async def execute_full_workflow(id: str):
                             if h_sev == "info": status = "info"
                             
                             results["headers"].append({
-                                "name": h_name, "value": val, "status": status, "severity": h_sev if status == "missing" else "none"
+                                "name": h_name, "value": val, "status": status, "severity": h_sev if status == "missing" else "none", "url": final_url
                             })
                             results["summary"]["tested"] += 1
                             if status == "ok": results["summary"]["ok"] += 1

@@ -1,10 +1,9 @@
-
 "use client";
 
 import { WebSurfaceData, WebHeader } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Badge } from './ui/badge';
-import { ShieldCheck, AlertCircle, Info, ExternalLink, ShieldAlert, Globe } from 'lucide-react';
+import { ShieldCheck, AlertCircle, Info, ShieldAlert, Globe, Link as LinkIcon } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 export function WebSurfaceView({ data }: { data: WebSurfaceData }) {
@@ -26,6 +25,16 @@ export function WebSurfaceView({ data }: { data: WebSurfaceData }) {
       default: return 'text-muted-foreground';
     }
   };
+
+  // Group headers by their associated URL
+  const groupedHeaders = data.headers.reduce((acc, header) => {
+    const url = header.url || 'Primary Target';
+    if (!acc[url]) acc[url] = [];
+    acc[url].push(header);
+    return acc;
+  }, {} as Record<string, WebHeader[]>);
+
+  const urls = Object.keys(groupedHeaders);
 
   return (
     <div className="space-y-6">
@@ -56,63 +65,73 @@ export function WebSurfaceView({ data }: { data: WebSurfaceData }) {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Globe size={18} className="text-primary" />
-            Security Headers Analysis
-          </CardTitle>
-          <CardDescription>
-            Target URLs: {data.urls_tested.join(', ')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Security Header</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead>Risk Level</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.headers.map((header, idx) => (
-                <TableRow key={idx} className="group">
-                  <TableCell className="font-medium">{header.name}</TableCell>
-                  <TableCell>{getStatusBadge(header.status)}</TableCell>
-                  <TableCell className="max-w-[300px]">
-                    <div className="font-code text-xs truncate" title={header.value || ''}>
-                      {header.value || <span className="italic opacity-50">Not Set</span>}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className={`text-[10px] uppercase font-bold ${getSeverityColor(header.severity)}`}>
-                      {header.severity !== 'none' ? header.severity : '-'}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {data.headers.filter(h => h.status !== 'ok' && h.status !== 'info').map((h, i) => (
-          <div key={i} className="p-4 rounded-xl border border-border bg-card/50 flex gap-4">
-            <div className={`mt-1 ${getSeverityColor(h.severity)}`}>
-              <ShieldAlert size={20} />
-            </div>
-            <div className="space-y-1">
-              <h4 className="font-bold text-sm">{h.name} is {h.status}</h4>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {h.recommendation || 'This security header is essential for protecting the application from common web attacks.'}
-              </p>
-            </div>
-          </div>
+      <div className="space-y-8">
+        {urls.map((url, idx) => (
+          <Card key={idx} className="border-border/60">
+            <CardHeader className="pb-3 border-b border-border/40 bg-secondary/10">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <LinkIcon size={18} className="text-primary" />
+                <span className="font-code text-sm break-all">{url}</span>
+              </CardTitle>
+              <CardDescription>
+                Analysis for endpoint security posture.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30">
+                    <TableHead className="w-[250px]">Security Header</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead className="text-right">Risk Level</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groupedHeaders[url].map((header, hIdx) => (
+                    <TableRow key={hIdx} className="group hover:bg-muted/20">
+                      <TableCell className="font-medium text-sm">{header.name}</TableCell>
+                      <TableCell>{getStatusBadge(header.status)}</TableCell>
+                      <TableCell className="max-w-[300px]">
+                        <div className="font-code text-[11px] truncate text-muted-foreground" title={header.value || ''}>
+                          {header.value || <span className="italic opacity-30">Not Set</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={`text-[10px] uppercase font-bold ${getSeverityColor(header.severity)}`}>
+                          {header.severity !== 'none' ? header.severity : '-'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         ))}
       </div>
+
+      {data.summary.missing + data.summary.weak > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="col-span-full">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Risk Mitigation Recommendations</h3>
+          </div>
+          {data.headers.filter(h => h.status !== 'ok' && h.status !== 'info').slice(0, 8).map((h, i) => (
+            <div key={i} className="p-4 rounded-xl border border-border bg-card/50 flex gap-4 transition-colors hover:border-primary/20">
+              <div className={`mt-1 shrink-0 ${getSeverityColor(h.severity)}`}>
+                <ShieldAlert size={20} />
+              </div>
+              <div className="space-y-1 overflow-hidden">
+                <h4 className="font-bold text-sm truncate">{h.name}</h4>
+                <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                  {h.recommendation || 'This security header is essential for protecting the application from common web attacks like XSS, Clickjacking, or MIME sniffing.'}
+                </p>
+                {h.url && <p className="text-[10px] text-primary/60 truncate italic mt-1">Source: {h.url}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -50,6 +50,7 @@ export interface WebHeader {
   value: string | null;
   severity: 'low' | 'medium' | 'high' | 'none';
   recommendation?: string;
+  url?: string;
 }
 
 export interface WebSurfaceData {
