@@ -23,6 +23,7 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
     summary: z.any()
   }).nullable().optional(),
   cors_audit: z.any().nullable().optional(),
+  cookie_audit: z.any().nullable().optional(),
   techStack: z.array(z.string()).nullable().optional(),
   apiEndpoints: z.array(z.string()).nullable().optional(),
   screenshots: z.array(z.string()).nullable().optional(),
@@ -89,7 +90,14 @@ CORS Audit:
 - High Risk Findings: {{cors_audit.summary.high_risk}}
 {{/if}}
 
-Identify significant risks. Focus on exposed admin panels, sensitive backup files, unprotected API endpoints, and CORS misconfigurations.
+{{#if cookie_audit}}
+Cookie Audit:
+- Cookies Found: {{cookie_audit.summary.cookies_found}}
+- High Risk Issues: {{cookie_audit.summary.high_risk}}
+- Issues Detected: {{#each cookie_audit.cookies}}{{#if this.issue}}{{this.name}}: {{this.issue}}; {{/if}}{{/each}}
+{{/if}}
+
+Identify significant risks. Focus on exposed admin panels, sensitive backup files, unprotected API endpoints, CORS misconfigurations, and insecure cookies (missing HttpOnly/Secure flags on sensitive names).
 Provide a risk score 0-100 and a list of potential vulnerabilities with recommendations.`,
 });
 

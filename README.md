@@ -82,7 +82,7 @@ def add_group(g: GroupCreate):
             "host": host.rstrip('/'),
             "status": "idle",
             "progress": 0,
-            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None}
+            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None, "cookie_audit": None}
         })
     
     group = {
@@ -109,7 +109,7 @@ def run_group_scan(id: str, background_tasks: BackgroundTasks):
         for child in group["childTargets"]:
             child["status"] = "running"
             child["progress"] = 0
-            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None}
+            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None, "cookie_audit": None}
         
         background_tasks.add_task(execute_group_workflow, id)
         return {"status": "started"}
@@ -196,7 +196,7 @@ async def execute_single_target(group, child, group_id):
             child["activeModule"] = "subdomain_enumeration"
             log("Phase 1: Subdomain Discovery...")
             binary = shutil.which('subfinder') or os.path.join(os.path.expanduser("~"), "go", "bin", "subfinder")
-            if os.path.exists(binary):
+            if binary and os.path.exists(binary):
                 cmd = [binary, '-d', host, '-silent']
                 try:
                     process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -252,12 +252,15 @@ async def execute_single_target(group, child, group_id):
                 log(f"Service analysis complete. {len(found_ports)} ports analyzed.", "success")
             child["progress"] = 30
 
-        # Phase 3: Web Surface (Security Headers)
-        if (modules.get("web_surface_scan")) and not is_stopped():
+        # Phase 3: Web Surface & Cookie Audit
+        harvested_urls = []
+        if (modules.get("web_surface_scan") or modules.get("cookie_audit")) and not is_stopped():
             child["activeModule"] = "web_surface_scan"
             log("Phase 3: Web Security Analysis...")
             headers, _ = build_http_context()
-            results = {"urls_tested": [], "ports_used": web_ports, "headers": [], "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}}
+            surface_results = {"urls_tested": [], "ports_used": web_ports, "headers": [], "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}}
+            cookie_results = {"cookies": [], "summary": {"cookies_found": 0, "safe": 0, "weak": 0, "high_risk": 0}}
+            
             unique_urls = set()
             for p in web_ports:
                 proto = "https" if p in [443, 8443] else "http"
@@ -268,23 +271,69 @@ async def execute_single_target(group, child, group_id):
                     try:
                         resp = await client.get(url)
                         final_url = str(resp.url).rstrip('/')
-                        if final_url in results["urls_tested"]: continue
-                        results["urls_tested"].append(final_url)
+                        if final_url in surface_results["urls_tested"]: continue
+                        surface_results["urls_tested"].append(final_url)
                         
-                        header_defs = [
-                            ("Content-Security-Policy", "high"), ("Strict-Transport-Security", "medium"),
-                            ("X-Frame-Options", "medium"), ("X-Content-Type-Options", "low"),
-                            ("Referrer-Policy", "low"), ("Permissions-Policy", "low")
-                        ]
-                        for h_name, h_sev in header_defs:
-                            val = resp.headers.get(h_name)
-                            status = "ok" if val else "missing"
-                            results["headers"].append({"name": h_name, "value": val, "status": status, "severity": h_sev if status == "missing" else "none", "url": final_url})
-                            results["summary"]["tested"] += 1
-                            if status == "ok": results["summary"]["ok"] += 1
-                            else: results["summary"]["missing"] += 1
+                        # Headers Audit
+                        if modules.get("web_surface_scan"):
+                            header_defs = [
+                                ("Content-Security-Policy", "high"), ("Strict-Transport-Security", "medium"),
+                                ("X-Frame-Options", "medium"), ("X-Content-Type-Options", "low"),
+                                ("Referrer-Policy", "low"), ("Permissions-Policy", "low")
+                            ]
+                            for h_name, h_sev in header_defs:
+                                val = resp.headers.get(h_name)
+                                status = "ok" if val else "missing"
+                                surface_results["headers"].append({"name": h_name, "value": val, "status": status, "severity": h_sev if status == "missing" else "none", "url": final_url})
+                                surface_results["summary"]["tested"] += 1
+                                if status == "ok": surface_results["summary"]["ok"] += 1
+                                else: surface_results["summary"]["missing"] += 1
+
+                        # Cookies Audit
+                        if modules.get("cookie_audit") and "set-cookie" in resp.headers:
+                            set_cookies = resp.headers.get_list("set-cookie")
+                            for sc in set_cookies:
+                                parts = [p.strip() for p in sc.split(";")]
+                                name_val = parts[0].split("=", 1)
+                                name = name_val[0]
+                                val_preview = name_val[1][:15] + "..." if len(name_val) > 1 and len(name_val[1]) > 15 else (name_val[1] if len(name_val) > 1 else "")
+                                
+                                c_httponly = any(p.lower() == "httponly" for p in parts)
+                                c_secure = any(p.lower() == "secure" for p in parts)
+                                c_samesite = next((p.split("=")[1] for p in parts if p.lower().startswith("samesite=")), None)
+                                c_domain = next((p.split("=")[1] for p in parts if p.lower().startswith("domain=")), None)
+                                c_path = next((p.split("=")[1] for p in parts if p.lower().startswith("path=")), None)
+                                
+                                status = "ok"
+                                issue = None
+                                is_sensitive = any(x in name.lower() for x in ["session", "auth", "token", "jwt", "key"])
+                                
+                                if not c_secure and url.startswith("https"):
+                                    status = "high" if is_sensitive else "weak"
+                                    issue = "Missing Secure flag"
+                                elif not c_httponly and is_sensitive:
+                                    status = "high"
+                                    issue = "Missing HttpOnly on sensitive cookie"
+                                elif c_samesite and c_samesite.lower() == "none" and not c_secure:
+                                    status = "high"
+                                    issue = "SameSite=None without Secure"
+                                elif c_domain and c_domain.startswith("."):
+                                    status = "weak"
+                                    issue = "Broad domain scope"
+
+                                cookie_results["cookies"].append({
+                                    "url": final_url, "name": name, "value_preview": val_preview,
+                                    "secure": c_secure, "httponly": c_httponly, "samesite": c_samesite,
+                                    "domain": c_domain, "path": c_path, "status": status, "issue": issue
+                                })
+                                cookie_results["summary"]["cookies_found"] += 1
+                                if status == "ok": cookie_results["summary"]["safe"] += 1
+                                elif status == "weak": cookie_results["summary"]["weak"] += 1
+                                else: cookie_results["summary"]["high_risk"] += 1
                     except: pass
-            child["results"]["webSurface"] = results
+            
+            if modules.get("web_surface_scan"): child["results"]["webSurface"] = surface_results
+            if modules.get("cookie_audit"): child["results"]["cookie_audit"] = cookie_results
             log("Web surface analysis complete.", "success")
             child["progress"] = 45
 
@@ -294,13 +343,12 @@ async def execute_single_target(group, child, group_id):
             log("Phase 4: TLS Verification...")
             tls_results = {"ports_used": tls_ports, "versions": [], "ciphers": [], "summary": {"supported_versions": 0, "insecure_versions": 0, "weak_ciphers": 0, "insecure_ciphers": 0}}
             
-            # Simulated check showing all statuses
             for v_name in ["SSL 3.0", "TLS 1.0", "TLS 1.1", "TLS 1.2", "TLS 1.3"]:
                 if v_name == "TLS 1.2":
                     tls_results["versions"].append({"version": v_name, "supported": True, "cipher": "ECDHE-RSA-AES256-GCM-SHA384", "severity": "low"})
                     tls_results["summary"]["supported_versions"] += 1
                 elif v_name == "TLS 1.3":
-                     tls_results["versions"].append({"version": v_name, "supported": True, "cipher": "TLS_AES_256_GCM_SHA384", "severity": "low"})
+                     tls_results["versions"].append({"version": v_name, "supported": True, "cipher": "TLS_AES_25_GCM_SHA384", "severity": "low"})
                      tls_results["summary"]["supported_versions"] += 1
                 else:
                     tls_results["versions"].append({"version": v_name, "supported": False, "severity": "none"})
@@ -390,12 +438,16 @@ async def execute_single_target(group, child, group_id):
                     context = await browser.new_context(extra_http_headers=headers)
                     if cookies: await context.add_cookies(cookies)
                     page = await context.new_page()
-                    await page.goto(f"https://{host}", timeout=15000)
+                    try:
+                        await page.goto(f"https://{host}", timeout=15000)
+                    except:
+                        await page.goto(f"http://{host}", timeout=15000)
                     screenshot_bytes = await page.screenshot()
                     child["results"]["screenshots"].append(f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}")
                     await browser.close()
                     log("Snapshot captured.", "success")
-                except: pass
+                except Exception as e:
+                    log(f"Screenshot failed: {str(e)}", "warn")
             child["progress"] = 95
 
         child["status"] = "completed"

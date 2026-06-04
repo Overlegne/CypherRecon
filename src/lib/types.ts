@@ -37,7 +37,8 @@ export type ReconModuleType =
   | 'web_surface_scan'
   | 'tls_analysis'
   | 'url_harvesting'
-  | 'cors_audit';
+  | 'cors_audit'
+  | 'cookie_audit';
 
 export interface OsintFinding {
   label: string;
@@ -130,6 +131,29 @@ export interface CORSAuditData {
   };
 }
 
+export interface CookieFinding {
+  url: string;
+  name: string;
+  value_preview: string;
+  secure: boolean;
+  httponly: boolean;
+  samesite: string | null;
+  domain: string | null;
+  path: string | null;
+  status: 'ok' | 'weak' | 'high';
+  issue?: string;
+}
+
+export interface CookieAuditData {
+  cookies: CookieFinding[];
+  summary: {
+    cookies_found: number;
+    safe: number;
+    weak: number;
+    high_risk: number;
+  };
+}
+
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
@@ -142,6 +166,7 @@ export interface ScanResults {
   tlsData?: TLSData;
   urlHarvesting?: URLHarvestingData;
   cors_audit?: CORSAuditData;
+  cookie_audit?: CookieAuditData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 

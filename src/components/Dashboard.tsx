@@ -24,7 +24,8 @@ import {
   Link as LinkIcon,
   ShieldEllipsis,
   BrainCircuit,
-  Settings
+  Settings,
+  Cookie
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -46,6 +47,7 @@ import { TLSAnalysisView } from './TLSAnalysisView';
 import { URLHarvestingView } from './URLHarvestingView';
 import { CORSAuditView } from './CORSAuditView';
 import { RiskAnalysisView } from './RiskAnalysisView';
+import { CookieAuditView } from './CookieAuditView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -70,6 +72,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   tls_analysis: true,
   url_harvesting: true,
   cors_audit: true,
+  cookie_audit: true,
 };
 
 export default function Dashboard() {
@@ -476,6 +479,7 @@ export default function Dashboard() {
                     <TabsTrigger value="harvesting" className="gap-2"><LinkIcon size={14} /> URL Harvesting</TabsTrigger>
                     <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
                     <TabsTrigger value="cors" className="gap-2"><ShieldEllipsis size={14} /> CORS Audit</TabsTrigger>
+                    <TabsTrigger value="cookies" className="gap-2"><Cookie size={14} /> Cookie Audit</TabsTrigger>
                     <TabsTrigger value="tls" className="gap-2"><Shield size={14} /> SSL/TLS</TabsTrigger>
                     <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                     <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
@@ -572,6 +576,12 @@ export default function Dashboard() {
                     {selectedChild.results?.cors_audit ? (
                       <CORSAuditView data={selectedChild.results.cors_audit} />
                     ) : <div className="py-20 text-center opacity-40">Awaiting CORS Audit...</div>}
+                  </TabsContent>
+
+                  <TabsContent value="cookies" className="mt-6">
+                    {selectedChild.results?.cookie_audit ? (
+                      <CookieAuditView data={selectedChild.results.cookie_audit} />
+                    ) : <div className="py-20 text-center opacity-40">Awaiting Cookie Audit...</div>}
                   </TabsContent>
 
                   <TabsContent value="tls" className="mt-6">
