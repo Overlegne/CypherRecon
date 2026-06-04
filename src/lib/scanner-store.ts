@@ -42,7 +42,7 @@ export function useScannerStore() {
     localStorage.setItem('cypherrecon_targets', JSON.stringify(targets));
   }, [targets]);
 
-  const addTarget = useCallback((host: string, mode: ReconMode) => {
+  const addTarget = useCallback((host: string, mode: ReconMode, modules?: Record<ReconModuleType, boolean>) => {
     const newTarget: Target = {
       id: Math.random().toString(36).substr(2, 9),
       host,
@@ -50,7 +50,7 @@ export function useScannerStore() {
       status: 'idle',
       progress: 0,
       createdAt: Date.now(),
-      modules: { ...DEFAULT_MODULES },
+      modules: modules || { ...DEFAULT_MODULES },
     };
     setTargets(prev => [newTarget, ...prev]);
     setSelectedTargetId(newTarget.id);

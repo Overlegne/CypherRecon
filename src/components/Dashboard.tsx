@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useScannerStore } from '@/lib/scanner-store';
-import { Target, ReconMode } from '@/lib/types';
+import { Target, ReconMode, ReconModuleType } from '@/lib/types';
 import { 
   Plus, 
   Terminal, 
@@ -21,7 +21,8 @@ import {
   Network,
   Cpu,
   Unplug,
-  Settings
+  Settings,
+  ChevronRight
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -46,6 +47,17 @@ import { formatDistanceToNow } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { SettingsDialog } from './SettingsDialog';
+import { Switch } from './ui/switch';
+
+const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
+  subdomain_enumeration: true,
+  osint: true,
+  cert_transparency: true,
+  port_scanning: true,
+  tech_stack: true,
+  api_discovery: true,
+  screenshotting: false,
+};
 
 export default function Dashboard() {
   const { 
@@ -62,14 +74,20 @@ export default function Dashboard() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [newHost, setNewHost] = useState('');
   const [newMode, setNewMode] = useState<ReconMode>('blackbox');
+  const [selectedModules, setSelectedModules] = useState<Record<ReconModuleType, boolean>>(INITIAL_MODULES);
 
   const selectedTarget = targets.find(t => t.id === selectedTargetId);
 
   const handleAddTarget = () => {
     if (!newHost) return;
-    addTarget(newHost, newMode);
+    addTarget(newHost, newMode, selectedModules);
     setNewHost('');
+    setSelectedModules(INITIAL_MODULES);
     setIsAddOpen(false);
+  };
+
+  const toggleModuleSelection = (module: ReconModuleType) => {
+    setSelectedModules(prev => ({ ...prev, [module]: !prev[module] }));
   };
 
   const getStatusBadge = (status: Target['status']) => {
@@ -102,36 +120,68 @@ export default function Dashboard() {
                 New Target
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-xl">
               <DialogHeader>
                 <DialogTitle>Add New Recon Target</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Domain or IP Address</Label>
-                  <Input 
-                    placeholder="example.com or 192.168.1.1" 
-                    value={newHost}
-                    onChange={(e) => setNewHost(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <Label>Recon Mode</Label>
-                  <RadioGroup value={newMode} onValueChange={(v) => setNewMode(v as ReconMode)}>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="blackbox" id="blackbox" />
-                      <Label htmlFor="blackbox" className="font-normal">Blackbox (External discovery only)</Label>
+              <Tabs defaultValue="general" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="general">Target Info</TabsTrigger>
+                  <TabsTrigger value="modules">Module Pipeline</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="general" className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Domain or IP Address</Label>
+                    <Input 
+                      placeholder="example.com or 192.168.1.1" 
+                      value={newHost}
+                      onChange={(e) => setNewHost(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <Label>Recon Mode</Label>
+                    <RadioGroup value={newMode} onValueChange={(v) => setNewMode(v as ReconMode)}>
+                      <div className="flex items-center space-x-2 p-3 rounded-lg border border-border hover:bg-secondary/20 transition-colors cursor-pointer" onClick={() => setNewMode('blackbox')}>
+                        <RadioGroupItem value="blackbox" id="blackbox" />
+                        <div className="flex-1">
+                          <Label htmlFor="blackbox" className="font-semibold block cursor-pointer">Blackbox</Label>
+                          <span className="text-[10px] text-muted-foreground">External discovery only. No prior knowledge required.</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2 p-3 rounded-lg border border-border hover:bg-secondary/20 transition-colors cursor-pointer" onClick={() => setNewMode('greybox')}>
+                        <RadioGroupItem value="greybox" id="greybox" />
+                        <div className="flex-1">
+                          <Label htmlFor="greybox" className="font-semibold block cursor-pointer">Greybox</Label>
+                          <span className="text-[10px] text-muted-foreground">Includes potential credentialed entrypoints and deeper insights.</span>
+                        </div>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="modules" className="py-4">
+                  <ScrollArea className="h-[300px] pr-4">
+                    <div className="space-y-3">
+                      {(Object.keys(selectedModules) as ReconModuleType[]).map((key) => (
+                        <div key={key} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card/50">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm font-medium capitalize">{key.replace(/_/g, ' ')}</Label>
+                            <p className="text-[10px] text-muted-foreground">Enable specialized discovery for this component.</p>
+                          </div>
+                          <Switch 
+                            checked={selectedModules[key]} 
+                            onCheckedChange={() => toggleModuleSelection(key)} 
+                          />
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="greybox" id="greybox" />
-                      <Label htmlFor="greybox" className="font-normal">Greybox (Includes credentialed entrypoints)</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-              </div>
+                  </ScrollArea>
+                </TabsContent>
+              </Tabs>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddTarget}>Add Target</Button>
+                <Button onClick={handleAddTarget}>Create Sequence</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
