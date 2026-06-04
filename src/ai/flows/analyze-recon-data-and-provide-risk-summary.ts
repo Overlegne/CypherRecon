@@ -15,6 +15,7 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
   target: z.string().describe('The primary target domain or IP address.'),
   subdomains: z
     .array(z.string())
+    .nullable()
     .optional()
     .describe('Discovered subdomains.'),
   osintData:
@@ -23,7 +24,9 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
       description: z.string(),
       url: z.string().optional(),
       type: z.string()
-    })).optional().describe('Open Source Intelligence (OSINT) findings.'),
+    }))
+    .nullable()
+    .optional().describe('Open Source Intelligence (OSINT) findings.'),
   portScanResults:
     z.array(
       z.object({
@@ -33,10 +36,13 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
         state: z.string(),
       })
     )
+    .nullable()
     .optional()
     .describe('Results from port and service scans.'),
   techStack:
-    z.array(z.string()).optional().describe('Detected technologies.'),
+    z.array(z.string())
+    .nullable()
+    .optional().describe('Detected technologies.'),
   webSurface: z.object({
     summary: z.object({
       tested: z.number(),
@@ -49,7 +55,9 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
       status: z.string(),
       severity: z.string()
     }))
-  }).optional().describe('Security header analysis results.'),
+  })
+  .nullable()
+  .optional().describe('Security header analysis results.'),
   tlsData: z.object({
     versions: z.array(z.object({
       version: z.string(),
@@ -60,10 +68,16 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
       insecure_versions: z.number(),
       weak_ciphers: z.number()
     })
-  }).optional().describe('SSL/TLS analysis results.'),
-  apiEndpoints: z.array(z.string()).optional().describe('Discovered API endpoints.'),
+  })
+  .nullable()
+  .optional().describe('SSL/TLS analysis results.'),
+  apiEndpoints: z.array(z.string())
+  .nullable()
+  .optional().describe('Discovered API endpoints.'),
   screenshots:
-    z.array(z.string()).optional().describe('URLs or descriptions of screenshots.'),
+    z.array(z.string())
+    .nullable()
+    .optional().describe('URLs or descriptions of screenshots.'),
 });
 export type AnalyzeReconDataAndProvideRiskSummaryInput = z.infer<
   typeof AnalyzeReconDataAndProvideRiskSummaryInputSchema
