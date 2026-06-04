@@ -260,7 +260,6 @@ async def execute_single_target(group, child, group_id):
 
         # Phase 2: Port Scanning
         web_ports = [80, 443, 8080]
-        tls_ports = [443]
         if modules.get("port_scanning") and not is_stopped():
             child["activeModule"] = "port_scanning"
             log("Phase 2: Service Discovery...")
@@ -286,18 +285,24 @@ async def execute_single_target(group, child, group_id):
                             service = parts[2].lower()
                             ports_results.append({"port": p_val, "service": service, "state": parts[1], "version": " ".join(parts[3:])})
                             if p_val in [80, 443, 8080] or "http" in service: web_ports.append(p_val)
-                            if p_val == 443 or "ssl" in service: tls_ports.append(p_val)
                 child["results"]["portScanResults"] = ports_results
                 log(f"Found {len(found_ports)} active ports.", "success")
             child["progress"] = 35
 
-        # Phase 3: Web Surface
+        # Phase 3: Web Surface & Technology Inventory
         harvested_js = []
         if modules.get("web_surface_scan") and not is_stopped():
             child["activeModule"] = "web_surface_scan"
-            log("Phase 3: Web Security Analysis...")
+            log("Phase 3: Web Security & Tech Audit...")
             headers, _ = build_http_context()
-            surface_results = {"urls_tested": [], "ports_used": list(set(web_ports)), "headers": [], "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}}
+            surface_results = {
+                "urls_tested": [], 
+                "ports_used": list(set(web_ports)), 
+                "headers": [], 
+                "technology_inventory": {"technologies": [], "summary": {"found": 0, "up_to_date": 0, "possibly_outdated": 0, "vulnerable_hint": 0}},
+                "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}
+            }
+            
             async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True, timeout=10) as client:
                 for p in list(set(web_ports)):
                     proto = "https" if p in [443, 8443] else "http"
@@ -308,10 +313,10 @@ async def execute_single_target(group, child, group_id):
                         if final_url in surface_results["urls_tested"]: continue
                         surface_results["urls_tested"].append(final_url)
                         
-                        # Extraheer JS voor later
                         soup = BeautifulSoup(resp.text, 'html.parser')
                         for s in soup.find_all('script', src=True): harvested_js.append(urljoin(final_url, s['src']))
 
+                        # Security Headers Audit
                         header_defs = [("Content-Security-Policy", "high"), ("Strict-Transport-Security", "medium"), ("X-Frame-Options", "medium"), ("X-Content-Type-Options", "low")]
                         for h_name, h_sev in header_defs:
                             val = resp.headers.get(h_name)
@@ -320,69 +325,76 @@ async def execute_single_target(group, child, group_id):
                             surface_results["summary"]["tested"] += 1
                             if status == "ok": surface_results["summary"]["ok"] += 1
                             else: surface_results["summary"]["missing"] += 1
+                            
+                        # Technology Fingerprinting
+                        sigs = [
+                            ("nginx", "webserver", r"nginx/(\d+\.\d+\.\d+)", "server"),
+                            ("Apache", "webserver", r"Apache/(\d+\.\d+\.\d+)", "server"),
+                            ("Cloudflare", "cdn", r"cloudflare", "server"),
+                            ("WordPress", "cms", r"wp-content", "html"),
+                            ("Next.js", "frontend", r"_next/static", "html"),
+                            ("PHP", "backend", r"PHP/(\d+\.\d+\.\d+)", "x-powered-by")
+                        ]
+                        
+                        for name, type_tag, pattern, source in sigs:
+                            found = False
+                            ver = None
+                            if source == "server" and resp.headers.get("Server"):
+                                match = re.search(pattern, resp.headers["Server"], re.I)
+                                if match: 
+                                    found = True
+                                    try: ver = match.group(1)
+                                    except: pass
+                            elif source == "x-powered-by" and resp.headers.get("X-Powered-By"):
+                                match = re.search(pattern, resp.headers["X-Powered-By"], re.I)
+                                if match: 
+                                    found = True
+                                    try: ver = match.group(1)
+                                    except: pass
+                            elif source == "html":
+                                if re.search(pattern, resp.text, re.I): found = True
+                                
+                            if found:
+                                tech_item = {
+                                    "name": name, "type": type_tag, "version": ver, 
+                                    "confidence": 0.9, "status": "up_to_date" if ver else "unknown",
+                                    "risk": "low" if ver else "info", "evidence": [source]
+                                }
+                                if tech_item["name"] not in [t["name"] for t in surface_results["technology_inventory"]["technologies"]]:
+                                    surface_results["technology_inventory"]["technologies"].append(tech_item)
+                                    surface_results["technology_inventory"]["summary"]["found"] += 1
+                                    if tech_item["status"] == "up_to_date": surface_results["technology_inventory"]["summary"]["up_to_date"] += 1
+
                     except: pass
             child["results"]["webSurface"] = surface_results
-            log("Web surface analysis complete.", "success")
-            child["progress"] = 50
+            log("Web security & technology audit complete.", "success")
+            child["progress"] = 60
 
         # Phase 4: JS Library Inventory
         if modules.get("js_inventory") and not is_stopped():
             child["activeModule"] = "js_inventory"
             log("Phase 4: Auditing JS Libraries...")
             js_results = {"libraries": [], "summary": {"js_files_tested": 0, "unique_libraries": 0, "possibly_outdated": 0, "high_risk": 0}}
-            js_targets = list(set(harvested_js))[:10] # Limiet voor performance
+            js_targets = list(set(harvested_js))[:10]
             
-            patterns = [
-                ("jQuery", r"jQuery v?(\d+\.\d+\.\d+)", "3.6.0"),
-                ("React", r"React\.version\s*=\s*['\"](\d+\.\d+\.\d+)['\"]", "17.0.0"),
-                ("Vue", r"Vue\.version\s*=\s*['\"](\d+\.\d+\.\d+)['\"]", "3.0.0"),
-                ("Bootstrap", r"Bootstrap v(\d+\.\d+\.\d+)", "5.0.0"),
-                ("Lodash", r"lodash\s+v?(\d+\.\d+\.\d+)", "4.17.0")
-            ]
-
+            patterns = [("jQuery", r"jQuery v?(\d+\.\d+\.\d+)", "3.6.0"), ("React", r"React\.version\s*=\s*['\"](\d+\.\d+\.\d+)['\"]", "17.0.0")]
             async with httpx.AsyncClient(verify=False, timeout=5) as client:
                 for js_url in js_targets:
                     js_results["summary"]["js_files_tested"] += 1
                     try:
                         r = await client.get(js_url)
                         if r.status_code == 200:
-                            content = r.text
                             for name, pat, min_v in patterns:
-                                match = re.search(pat, content)
+                                match = re.search(pat, r.text)
                                 if match:
                                     ver = match.group(1)
-                                    status = "ok"
-                                    if ver < min_v: status = "possibly_outdated"
+                                    status = "ok" if ver >= min_v else "possibly_outdated"
                                     js_results["libraries"].append({"name": name, "version": ver, "file": js_url, "confidence": 0.9, "status": status})
                     except: pass
             js_results["summary"]["unique_libraries"] = len(set([l["name"] for l in js_results["libraries"]]))
-            js_results["summary"]["possibly_outdated"] = len([l for l in js_results["libraries"] if l["status"] == "possibly_outdated"])
             child["results"]["js_inventory"] = js_results
-            log(f"JS Inventory complete. Found {js_results['summary']['unique_libraries']} libs.", "success")
-            child["progress"] = 70
-
-        # Phase 5: URL Harvesting
-        if modules.get("url_harvesting") and not is_stopped():
-            child["activeModule"] = "url_harvesting"
-            log("Phase 5: Harvesting URLs...")
-            harvested = []
-            seen = set()
-            headers, _ = build_http_context()
-            async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True, timeout=5) as client:
-                for target_url in [f"https://{host}", f"http://{host}"]:
-                    try:
-                        r = await client.get(target_url)
-                        soup = BeautifulSoup(r.text, 'html.parser')
-                        for a in soup.find_all('a', href=True):
-                            full = urljoin(target_url, a['href']).rstrip('/')
-                            if host in full and full not in seen:
-                                seen.add(full)
-                                interesting = any(x in full.lower() for x in ['api', 'admin', 'login', 'config', 'backup'])
-                                harvested.append({"url": full, "source": "html", "type": "page", "interesting": interesting})
-                    except: pass
-            child["results"]["urlHarvesting"] = {"urls": harvested, "summary": {"found": len(harvested), "unique": len(seen), "interesting": len([u for u in harvested if u['interesting']]), "api_endpoints": 0}}
-            log(f"Found {len(harvested)} endpoints.", "success")
-            child["progress"] = 85
+            log(f"JS Inventory complete.", "success")
+            child["progress"] = 80
 
         child["status"] = "completed"
         child["progress"] = 100
@@ -392,3 +404,5 @@ async def execute_single_target(group, child, group_id):
         log(f"Error: {str(e)}", "error")
         child["status"] = "failed"
 ```
+
+Veel succes met je scans! De Technology Inventory helpt je nu nog beter te begrijpen wat de 'onderkant' van de webapplicatie is en waar de grootste risico's liggen.

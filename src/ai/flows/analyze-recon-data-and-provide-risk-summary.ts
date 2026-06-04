@@ -12,7 +12,14 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
   subdomains: z.array(z.string()).nullable().optional(),
   osintData: z.array(z.any()).nullable().optional(),
   portScanResults: z.array(z.any()).nullable().optional(),
-  webSurface: z.any().nullable().optional(),
+  webSurface: z.object({
+    summary: z.any(),
+    headers: z.array(z.any()),
+    technology_inventory: z.object({
+      technologies: z.array(z.any()),
+      summary: z.any()
+    }).nullable().optional()
+  }).nullable().optional(),
   tlsData: z.any().nullable().optional(),
   urlHarvesting: z.object({
     urls: z.array(z.object({
@@ -71,21 +78,20 @@ const analyzeReconDataAndProvideRiskSummaryPrompt = ai.definePrompt({
 DNS & Subdomain Takeover Analysis:
 - Tested Subdomains: {{dns_takeover.summary.tested}}
 - High Risk Takeover Findings: {{dns_takeover.summary.high_risk}}
-- Issues Detected: {{#each dns_takeover.records}}{{#if this.issue}}{{this.subdomain}} ({{this.type}}): {{this.issue}}; {{/if}}{{/each}}
+{{/if}}
+
+{{#if webSurface.technology_inventory}}
+Technology Inventory:
+- Technologies Found: {{webSurface.technology_inventory.summary.found}}
+- Outdated Tech: {{webSurface.technology_inventory.summary.possibly_outdated}}
+- High Risk Tech: {{webSurface.technology_inventory.summary.vulnerable_hint}}
+- List: {{#each webSurface.technology_inventory.technologies}}{{{this.name}}} v{{this.version}} (Risk: {{{this.risk}}}); {{/each}}
 {{/if}}
 
 {{#if js_inventory}}
 JavaScript Library Inventory:
 - Libraries Found: {{js_inventory.summary.unique_libraries}}
 - Outdated/Risky: {{js_inventory.summary.possibly_outdated}}
-- Details: {{#each js_inventory.libraries}}{{#if this.status}}{{{this.name}}} v{{this.version}} (Status: {{this.status}}); {{/if}}{{/each}}
-{{/if}}
-
-{{#if urlHarvesting}}
-Harvested URLs:
-- Total: {{urlHarvesting.summary.found}}
-- API Endpoints found: {{urlHarvesting.summary.api_endpoints}}
-- Interesting paths: {{#each urlHarvesting.urls}}{{#if this.interesting}}{{{this.url}}} (Type: {{this.type}}), {{/if}}{{/each}}
 {{/if}}
 
 {{#if webSurface}}
@@ -107,7 +113,7 @@ Cookie Audit:
 - High Risk Issues: {{cookie_audit.summary.high_risk}}
 {{/if}}
 
-Identify significant risks. Focus on outdated JavaScript libraries with known vulnerabilities (DOM-XSS), subdomain takeover (dangling CNAMEs), exposed admin panels, unprotected API endpoints, CORS misconfigurations, and insecure cookies.
+Identify significant risks. Focus on outdated server software (webservers, CMS), outdated JavaScript libraries, subdomain takeover, exposed admin panels, and insecure cookies.
 Provide a risk score 0-100 and a list of potential vulnerabilities with recommendations.`,
 });
 

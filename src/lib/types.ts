@@ -58,10 +58,31 @@ export interface WebHeader {
   url?: string;
 }
 
+export interface TechDetection {
+  name: string;
+  type: 'webserver' | 'frontend' | 'backend' | 'cms' | 'analytics' | 'security' | 'cdn' | 'other';
+  version: string | null;
+  confidence: number;
+  status: 'up_to_date' | 'possibly_outdated' | 'vulnerable_hint' | 'unknown';
+  risk: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  evidence: string[];
+}
+
+export interface TechnologyInventoryData {
+  technologies: TechDetection[];
+  summary: {
+    found: number;
+    up_to_date: number;
+    possibly_outdated: number;
+    vulnerable_hint: number;
+  };
+}
+
 export interface WebSurfaceData {
   urls_tested: string[];
   ports_used: number[];
   headers: WebHeader[];
+  technology_inventory?: TechnologyInventoryData;
   summary: {
     tested: number;
     ok: number;
