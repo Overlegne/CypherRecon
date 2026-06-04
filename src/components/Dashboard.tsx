@@ -27,7 +27,9 @@ import {
   Settings,
   Cookie,
   Dna,
-  FileCode
+  FileCode,
+  Loader2,
+  Sparkles
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -55,7 +57,7 @@ import { JSLibraryInventoryView } from './JSLibraryInventoryView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { SettingsDialog } from './SettingsDialog';
 import { Switch } from './ui/switch';
@@ -91,6 +93,8 @@ export default function Dashboard() {
     deleteTarget: deleteGroup, 
     runScan,
     stopScan,
+    runAIAnalysis,
+    isAnalyzing,
     isBackendConnected
   } = useScannerStore();
 
@@ -505,7 +509,7 @@ export default function Dashboard() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <TerminalLogs logs={selectedChild.results?.logs || []} />
                         <div className="space-y-6">
-                          {selectedChild.results?.riskAnalysis && (
+                          {selectedChild.results?.riskAnalysis ? (
                              <div className="p-6 rounded-xl border border-primary/30 bg-primary/5">
                                <div className="flex items-center justify-between mb-4">
                                  <h4 className="text-sm font-semibold uppercase tracking-wider text-primary">AI Threat Assessment</h4>
@@ -513,7 +517,54 @@ export default function Dashboard() {
                                </div>
                                <Progress value={selectedChild.results.riskAnalysis.riskScore} className="h-2 mb-4" />
                                <p className="text-xs text-muted-foreground leading-relaxed">{selectedChild.results.riskAnalysis.riskSummary}</p>
+                               <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="mt-4 gap-2 text-xs border-primary/20 hover:bg-primary/10"
+                                onClick={() => runAIAnalysis(selectedGroupId!, selectedChild.id)}
+                                disabled={isAnalyzing}
+                               >
+                                 <Sparkles size={12} />
+                                 Update Analysis
+                               </Button>
                              </div>
+                          ) : (
+                            <Card className="bg-primary/5 border-primary/20">
+                              <CardHeader>
+                                <CardTitle className="text-sm flex items-center gap-2">
+                                  <Sparkles size={16} className="text-primary" />
+                                  AI Analysis Available
+                                </CardTitle>
+                                <CardDescription className="text-xs">
+                                  Generate a smart summary and risk assessment for this target based on current results.
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <Button 
+                                  className="w-full gap-2" 
+                                  size="sm"
+                                  onClick={() => runAIAnalysis(selectedGroupId!, selectedChild.id)}
+                                  disabled={isAnalyzing || selectedChild.status !== 'completed'}
+                                >
+                                  {isAnalyzing ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      Analyzing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <BrainCircuit size={16} />
+                                      Run AI Analysis
+                                    </>
+                                  )}
+                                </Button>
+                                {selectedChild.status !== 'completed' && (
+                                  <p className="text-[10px] text-muted-foreground text-center mt-2 italic">
+                                    Analysis will be available once the scan is complete.
+                                  </p>
+                                )}
+                              </CardContent>
+                            </Card>
                           )}
                           <Card className="bg-secondary/10 border-border/50">
                             <CardContent className="p-4">
@@ -537,10 +588,52 @@ export default function Dashboard() {
 
                   <TabsContent value="risk" className="mt-6">
                     {selectedChild.results?.riskAnalysis ? (
-                      <RiskAnalysisView data={selectedChild.results.riskAnalysis} />
+                      <div className="space-y-4">
+                        <div className="flex justify-end">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="gap-2 text-xs" 
+                            onClick={() => runAIAnalysis(selectedGroupId!, selectedChild.id)}
+                            disabled={isAnalyzing}
+                          >
+                            {isAnalyzing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles size={12} />}
+                            Refresh AI Assessment
+                          </Button>
+                        </div>
+                        <RiskAnalysisView data={selectedChild.results.riskAnalysis} />
+                      </div>
                     ) : (
-                      <div className="py-20 text-center opacity-40">
-                         {selectedChild.status === 'completed' ? "AI Analysis is being generated..." : "Waiting for scan to complete..."}
+                      <div className="py-20 flex flex-col items-center justify-center text-center space-y-4 border rounded-xl bg-secondary/5 border-dashed">
+                        <div className="p-4 rounded-full bg-primary/10">
+                          <Sparkles size={40} className="text-primary" />
+                        </div>
+                        <div className="space-y-2 max-w-sm">
+                          <h3 className="text-xl font-bold">No AI Analysis Yet</h3>
+                          <p className="text-sm text-muted-foreground">
+                            AI analysis is optional and manually triggered. Use it to prioritize vulnerabilities and get a strategic summary.
+                          </p>
+                        </div>
+                        <Button 
+                          onClick={() => runAIAnalysis(selectedGroupId!, selectedChild.id)}
+                          disabled={isAnalyzing || selectedChild.status !== 'completed'}
+                          className="gap-2"
+                        >
+                          {isAnalyzing ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Generating Assessment...
+                            </>
+                          ) : (
+                            <>
+                              <BrainCircuit size={18} />
+                              Analyze with AI
+                            </>
+                          )}
+                        </Button>
+                        {selectedChild.status !== 'completed' && (
+                          <p className="text-xs text-amber-500 font-medium">Waiting for reconnaissance sequence to finish...</p>
+                        )}
                       </div>
                     )}
                   </TabsContent>

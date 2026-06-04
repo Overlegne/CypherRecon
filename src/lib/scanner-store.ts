@@ -10,6 +10,7 @@ export function useScannerStore() {
   const [targetGroups, setTargetGroups] = useState<TargetGroup[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const { settings } = useSettingsStore();
   const pollingRefs = useRef<Record<string, NodeJS.Timeout>>({});
 
@@ -70,50 +71,6 @@ export function useScannerStore() {
         const updatedGroup: TargetGroup = await response.json();
         setTargetGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
 
-        // Check each child target individually for AI analysis
-        for (const child of updatedGroup.childTargets) {
-          if (child.status === 'completed' && child.results && !child.results.riskAnalysis) {
-            // Check if there is enough data for analysis
-            const hasData = (child.results.portScanResults?.length || 0) > 0 || 
-                            (child.results.subdomains?.length || 0) > 0 || 
-                            child.results.webSurface !== null ||
-                            child.results.urlHarvesting !== null;
-
-            if (hasData) {
-              console.log(`Triggering AI Analysis for child target: ${child.host}`);
-              try {
-                const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
-                  target: child.host,
-                  ...child.results
-                });
-                
-                // Submit the analysis back to the engine so it persists
-                await fetch(`${url}/targets/${groupId}/risk`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ childId: child.id, riskAnalysis }),
-                  mode: 'cors'
-                });
-
-                // Update local state immediately to avoid waiting for next poll
-                setTargetGroups(prev => prev.map(g => {
-                  if (g.id === groupId) {
-                    return {
-                      ...g,
-                      childTargets: g.childTargets.map(ct => 
-                        ct.id === child.id ? { ...ct, results: { ...ct.results, riskAnalysis } } : ct
-                      )
-                    };
-                  }
-                  return g;
-                }));
-              } catch (aiErr) {
-                console.error("AI Analysis failed for child:", child.host, aiErr);
-              }
-            }
-          }
-        }
-
         if (updatedGroup.status === 'completed' || updatedGroup.status === 'failed') {
           if (pollingRefs.current[groupId]) {
             clearInterval(pollingRefs.current[groupId]);
@@ -126,6 +83,57 @@ export function useScannerStore() {
       console.warn("Polling error:", e);
     }
   }, [settings?.apiUrl, fetchGroups]);
+
+  const runAIAnalysis = async (groupId: string, childId: string) => {
+    if (!settings?.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, "");
+    
+    const group = targetGroups.find(g => g.id === groupId);
+    const child = group?.childTargets.find(c => c.id === childId);
+
+    if (!child || !child.results) {
+      toast({ variant: "destructive", title: "Missing Data", description: "Target scan must be completed before analysis." });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      toast({ title: "AI Analysis Started", description: `Processing reconnaissance data for ${child.host}...` });
+      
+      const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
+        target: child.host,
+        ...child.results
+      });
+      
+      // Submit the analysis back to the engine so it persists
+      await fetch(`${url}/targets/${groupId}/risk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childId: child.id, riskAnalysis }),
+        mode: 'cors'
+      });
+
+      // Update local state immediately
+      setTargetGroups(prev => prev.map(g => {
+        if (g.id === groupId) {
+          return {
+            ...g,
+            childTargets: g.childTargets.map(ct => 
+              ct.id === childId ? { ...ct, results: { ...ct.results, riskAnalysis } } : ct
+            )
+          };
+        }
+        return g;
+      }));
+
+      toast({ title: "Analysis Complete", description: "AI Threat Assessment has been generated." });
+    } catch (aiErr) {
+      console.error("AI Analysis failed:", aiErr);
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to generate risk assessment. Check quota or connectivity." });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     checkHealth();
@@ -235,6 +243,8 @@ export function useScannerStore() {
     deleteTarget: deleteTargetGroup,
     runScan,
     stopScan,
+    runAIAnalysis,
+    isAnalyzing,
     isBackendConnected,
     refresh: fetchGroups
   };
