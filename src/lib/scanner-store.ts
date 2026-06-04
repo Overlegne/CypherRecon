@@ -16,7 +16,14 @@ export function useScannerStore() {
 
   const checkHealth = useCallback(async () => {
     try {
-      const res = await fetch(`${settings.apiUrl}/health`, { signal: AbortSignal.timeout(2000) });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      const res = await fetch(`${settings.apiUrl}/health`, { 
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(timeoutId);
       setIsBackendConnected(res.ok);
     } catch (e) {
       setIsBackendConnected(false);
@@ -25,20 +32,23 @@ export function useScannerStore() {
 
   const fetchTargets = useCallback(async () => {
     try {
-      const response = await fetch(`${settings.apiUrl}/targets`);
+      const response = await fetch(`${settings.apiUrl}/targets`, { cache: 'no-store' });
       if (response.ok) {
         const data = await response.json();
         setTargets(data);
       }
     } catch (e) {
-      console.error("Backend fetch failed", e);
+      // Backend might be down, handled by checkHealth
     }
   }, [settings.apiUrl]);
 
   useEffect(() => {
     checkHealth();
     fetchTargets();
-    const interval = setInterval(checkHealth, 5000);
+    const interval = setInterval(() => {
+      checkHealth();
+      fetchTargets();
+    }, 5000);
     return () => clearInterval(interval);
   }, [checkHealth, fetchTargets]);
 
@@ -55,17 +65,21 @@ export function useScannerStore() {
         setTargets(prev => [newTarget, ...prev]);
         setSelectedTargetId(newTarget.id);
         toast({ title: "Target Created", description: `Added ${host} to pool.` });
+      } else {
+        throw new Error("Failed to create target");
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Connection Error", description: "Backend is unreachable." });
+      toast({ variant: "destructive", title: "Connection Error", description: "Backend is unreachable or returned an error." });
     }
   }, [settings.apiUrl]);
 
   const deleteTarget = useCallback(async (id: string) => {
     try {
-      await fetch(`${settings.apiUrl}/targets/${id}`, { method: 'DELETE' });
-      setTargets(prev => prev.filter(t => t.id !== id));
-      if (selectedTargetId === id) setSelectedTargetId(null);
+      const response = await fetch(`${settings.apiUrl}/targets/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setTargets(prev => prev.filter(t => t.id !== id));
+        if (selectedTargetId === id) setSelectedTargetId(null);
+      }
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Could not delete target." });
     }
@@ -91,14 +105,16 @@ export function useScannerStore() {
 
   const pollStatus = useCallback(async (targetId: string) => {
     try {
-      const response = await fetch(`${settings.apiUrl}/targets/${targetId}`);
+      const response = await fetch(`${settings.apiUrl}/targets/${targetId}`, { cache: 'no-store' });
       if (response.ok) {
         const updated = await response.json();
         setTargets(prev => prev.map(t => t.id === targetId ? updated : t));
 
         if (updated.status === 'completed') {
-          clearInterval(pollingRefs.current[targetId]);
-          delete pollingRefs.current[targetId];
+          if (pollingRefs.current[targetId]) {
+            clearInterval(pollingRefs.current[targetId]);
+            delete pollingRefs.current[targetId];
+          }
           
           if (updated.results && !updated.results.riskAnalysis) {
             const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
@@ -113,8 +129,10 @@ export function useScannerStore() {
             }).then(() => fetchTargets());
           }
         } else if (updated.status === 'failed') {
-          clearInterval(pollingRefs.current[targetId]);
-          delete pollingRefs.current[targetId];
+          if (pollingRefs.current[targetId]) {
+            clearInterval(pollingRefs.current[targetId]);
+            delete pollingRefs.current[targetId];
+          }
         }
       }
     } catch (e) {
@@ -142,7 +160,7 @@ export function useScannerStore() {
         }
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Scan Failed", description: "Backend connection lost." });
+      toast({ variant: "destructive", title: "Scan Failed", description: "Backend connection lost during initiation." });
     }
   }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus, isBackendConnected]);
 
