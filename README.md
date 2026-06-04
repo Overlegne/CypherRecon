@@ -11,7 +11,9 @@ CypherRecon is a production-ready dashboard for managing target reconnaissance. 
 - **Nmap** geïnstalleerd op je systeem pad (nodig voor echte scans).
 
 ### 2. Start de Echte Python Scanner
-Gebruik dit script om de frontend te koppelen aan echte systeemcommando's. Dit script voert daadwerkelijk `nmap -sCV -p-` uit.
+Gebruik dit script om de frontend te koppelen aan echte systeemcommando's. Dit script voert daadwerkelijk `nmap -sV -p 1-1000` uit.
+
+**Belangrijk:** Zorg dat `fastapi` en `uvicorn` zijn geïnstalleerd (`pip install fastapi uvicorn`).
 
 ```python
 import uuid, time, asyncio, subprocess, json
@@ -21,9 +23,17 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# In-memory DB (Vervang door SQLite voor persistentie)
+# CRITICAL: CORS instellingen voor communicatie met de frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In productie vervangen door de URL van je frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory DB
 db = {"targets": {}}
 
 class TargetCreate(BaseModel):
@@ -32,13 +42,16 @@ class TargetCreate(BaseModel):
     modules: Dict[str, bool]
 
 @app.get("/health")
-def health(): return {"status": "ok"}
+def health(): 
+    return {"status": "ok"}
 
 @app.get("/targets")
-def get_targets(): return list(db["targets"].values())
+def get_targets(): 
+    return list(db["targets"].values())
 
 @app.get("/targets/{id}")
-def get_target(id: str): return db["targets"].get(id)
+def get_target(id: str): 
+    return db["targets"].get(id)
 
 @app.post("/targets")
 def add_target(t: TargetCreate):
@@ -69,7 +82,8 @@ def update_risk(id: str, payload: dict):
 
 @app.delete("/targets/{id}")
 def delete_target(id: str):
-    if id in db["targets"]: del db["targets"][id]
+    if id in db["targets"]: 
+        del db["targets"][id]
     return {"status": "deleted"}
 
 async def execute_real_nmap(id: str):
@@ -86,11 +100,9 @@ async def execute_real_nmap(id: str):
         log(f"Starting deep scan on {host}...", "info")
         t["progress"] = 10
         
-        # ECHTE NMAP CALL: -sCV (Service/Script) -p- (Alle poorten)
-        # We gebruiken -oX - om XML output te krijgen die makkelijk te parsen is, 
-        # of gewoon tekst voor dit voorbeeld.
+        # ECHTE NMAP CALL
         process = subprocess.Popen(
-            ['nmap', '-sV', '-p', '1-1000', host], # Beperkt tot 1000 voor snelheid in test, gebruik -p- voor alles
+            ['nmap', '-sV', '-p', '1-1000', host], 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE,
             text=True
@@ -101,7 +113,6 @@ async def execute_real_nmap(id: str):
         
         if process.returncode == 0:
             log("Nmap sequence completed successfully.", "success")
-            # Simpele parser voor nmap output (Zou in productie een echte XML parser moeten zijn)
             ports = []
             for line in stdout.split('\n'):
                 if "/tcp" in line and "open" in line:
@@ -125,11 +136,13 @@ async def execute_real_nmap(id: str):
 
 if __name__ == "__main__":
     import uvicorn
+    # Start de server op port 5000
     uvicorn.run(app, host="0.0.0.0", port=5000)
 ```
 
 ### 3. Hoe te testen
-1. Zorg dat `nmap` is geïnstalleerd op je computer (`brew install nmap` of `sudo apt install nmap`).
-2. Draai het bovenstaande Python script.
+1. Zorg dat `nmap` is geïnstalleerd op je computer.
+2. Draai het bovenstaande Python script: `python main.py`.
 3. Ga in CypherRecon naar **System Settings** en zet de URL op `http://localhost:5000`.
-4. Start een scan. Je zult zien dat de logs en resultaten nu 1-op-1 overeenkomen met je lokale Nmap output.
+4. Controleer of de sidebar nu **ENGINE ONLINE** aangeeft.
+5. Start een scan. De logs en resultaten komen nu rechtstreeks uit de Nmap output op je lokale machine.
