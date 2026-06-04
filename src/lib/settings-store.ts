@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { AppSettings } from './types';
 
 const DEFAULT_SETTINGS: AppSettings = {
+  apiUrl: 'http://localhost:5000',
   apiKeys: {
     shodan: '',
     virustotal: '',

@@ -22,7 +22,7 @@ export interface OsintFinding {
 
 export interface Target {
   id: string;
-  host: string; // domain or IP
+  host: string;
   mode: ReconMode;
   status: ScanStatus;
   progress: number;
@@ -52,6 +52,7 @@ export interface ScanResults {
 }
 
 export interface AppSettings {
+  apiUrl: string;
   apiKeys: {
     shodan?: string;
     virustotal?: string;
