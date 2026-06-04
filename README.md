@@ -14,7 +14,7 @@ CypherRecon is a dashboard for managing target reconnaissance. It separates the 
   ```
 - Install Python dependencies:
   ```bash
-  pip install fastapi uvicorn pydantic
+  pip install fastapi uvicorn pydantic httpx
   ```
 - Set your `GOOGLE_GENAI_API_KEY` in the `.env` file of this project.
 
