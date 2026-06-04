@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -27,7 +28,14 @@ export function useSettingsStore() {
     const saved = localStorage.getItem('cypherrecon_settings');
     if (saved) {
       try {
-        setSettings(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // Merge with defaults to ensure all keys exist
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          apiKeys: { ...DEFAULT_SETTINGS.apiKeys, ...parsed.apiKeys },
+          scanDefaults: { ...DEFAULT_SETTINGS.scanDefaults, ...parsed.scanDefaults },
+        });
       } catch (e) {
         console.error("Failed to load settings", e);
       }

@@ -15,8 +15,8 @@ export function useScannerStore() {
   const pollingRefs = useRef<Record<string, NodeJS.Timeout>>({});
 
   const checkHealth = useCallback(async () => {
-    const url = settings.apiUrl.replace(/\/$/, ""); // Verwijder eventuele trailing slash
-    if (!url) return;
+    if (!settings?.apiUrl) return;
+    const url = settings.apiUrl.replace(/\/$/, ""); 
     
     try {
       const controller = new AbortController();
@@ -36,12 +36,12 @@ export function useScannerStore() {
         setIsBackendConnected(false);
       }
     } catch (e) {
-      // Alleen loggen als de status verandert om spam te voorkomen
       setIsBackendConnected(false);
     }
-  }, [settings.apiUrl]);
+  }, [settings?.apiUrl]);
 
   const fetchTargets = useCallback(async () => {
+    if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!isBackendConnected || !url) return;
     try {
@@ -56,7 +56,7 @@ export function useScannerStore() {
     } catch (e) {
       console.error("Fetch targets failed:", e);
     }
-  }, [settings.apiUrl, isBackendConnected]);
+  }, [settings?.apiUrl, isBackendConnected]);
 
   useEffect(() => {
     checkHealth();
@@ -70,6 +70,7 @@ export function useScannerStore() {
   }, [checkHealth, fetchTargets, isBackendConnected]);
 
   const addTarget = useCallback(async (host: string, mode: ReconMode, modules: Record<ReconModuleType, boolean>) => {
+    if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
     try {
@@ -91,9 +92,10 @@ export function useScannerStore() {
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Backend connection failed." });
     }
-  }, [settings.apiUrl]);
+  }, [settings?.apiUrl]);
 
   const deleteTarget = useCallback(async (id: string) => {
+    if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
     try {
@@ -108,9 +110,10 @@ export function useScannerStore() {
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Could not delete target." });
     }
-  }, [settings.apiUrl, selectedTargetId]);
+  }, [settings?.apiUrl, selectedTargetId]);
 
   const pollStatus = useCallback(async (targetId: string) => {
+    if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
     try {
@@ -128,7 +131,6 @@ export function useScannerStore() {
             delete pollingRefs.current[targetId];
           }
           
-          // Voer AI Analyse uit op ECHTE data
           if (updated.results && !updated.results.riskAnalysis) {
             try {
               const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
@@ -157,9 +159,10 @@ export function useScannerStore() {
     } catch (e) {
       console.warn("Polling error:", e);
     }
-  }, [settings.apiUrl, fetchTargets]);
+  }, [settings?.apiUrl, fetchTargets]);
 
   const runScan = useCallback(async (targetId: string) => {
+    if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!isBackendConnected || !url) {
       toast({ variant: "destructive", title: "Scanner Offline", description: "Start the local Python service first." });
@@ -183,7 +186,7 @@ export function useScannerStore() {
     } catch (e) {
       toast({ variant: "destructive", title: "Execution Error", description: "Lost connection to backend engine." });
     }
-  }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus, isBackendConnected, fetchTargets]);
+  }, [settings?.apiUrl, settings?.scanDefaults, settings?.apiKeys, pollStatus, isBackendConnected, fetchTargets]);
 
   return {
     targets,
