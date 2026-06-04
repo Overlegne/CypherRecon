@@ -21,7 +21,8 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
     z.array(z.object({
       label: z.string(),
       description: z.string(),
-      url: z.string().optional()
+      url: z.string().optional(),
+      type: z.string()
     })).optional().describe('Open Source Intelligence (OSINT) findings.'),
   portScanResults:
     z.array(
@@ -49,6 +50,17 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
       severity: z.string()
     }))
   }).optional().describe('Security header analysis results.'),
+  tlsData: z.object({
+    versions: z.array(z.object({
+      version: z.string(),
+      supported: z.boolean(),
+      severity: z.string()
+    })),
+    summary: z.object({
+      insecure_versions: z.number(),
+      weak_ciphers: z.number()
+    })
+  }).optional().describe('SSL/TLS analysis results.'),
   apiEndpoints: z.array(z.string()).optional().describe('Discovered API endpoints.'),
   screenshots:
     z.array(z.string()).optional().describe('URLs or descriptions of screenshots.'),
@@ -111,12 +123,20 @@ Web Surface (Security Headers):
 - Header: {{this.name}}, Status: {{this.status}}, Severity: {{this.severity}}
 {{/each}}
 {{/if}}
+{{#if tlsData}}
+SSL/TLS Security:
+- Insecure Protocols: {{tlsData.summary.insecure_versions}}
+- Weak Ciphers: {{tlsData.summary.weak_ciphers}}
+{{#each tlsData.versions}}
+- {{this.version}}: {{#if this.supported}}Supported (Severity: {{this.severity}}){{else}}Not Supported{{/if}}
+{{/each}}
+{{/if}}
 
 Instructions:
 1. Provide a 'riskSummary' highlighting the most significant risks.
 2. Assign a 'riskScore' (0-100).
 3. Provide a 'riskExplanation' justifying the score.
-4. List 'potentialVulnerabilities' with severity and recommendations. Focus on missing or weak security headers if relevant.`,
+4. List 'potentialVulnerabilities' with severity and recommendations. Focus on missing security headers and weak SSL/TLS protocols.`,
 });
 
 // Flow definition

@@ -20,7 +20,7 @@ Sla de onderstaande code op als `main.py` op je lokale machine en start deze:
 `uvicorn main:app --host 0.0.0.0 --port 5000`
 
 ```python
-import uuid, time, asyncio, subprocess, json, httpx, os, shutil, base64, re
+import uuid, time, asyncio, subprocess, json, httpx, os, shutil, base64, re, ssl, socket
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -59,7 +59,7 @@ class TargetCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok", "engine": "CypherRecon Core v1.7 (Visual Snapshot Ready)"}
+    return {"status": "ok", "engine": "CypherRecon Core v1.9 (SSL/TLS Ready)"}
 
 @app.get("/targets")
 def get_targets(): 
@@ -76,7 +76,7 @@ def add_target(t: TargetCreate):
         "id": new_id, "host": t.host, "mode": t.mode, "status": "idle",
         "progress": 0, "createdAt": int(time.time()*1000), "modules": t.modules,
         "credentials": [c.dict() for c in t.credentials],
-        "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None}
+        "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None}
     }
     db["targets"][new_id] = target
     return target
@@ -87,7 +87,7 @@ def run_scan(id: str, background_tasks: BackgroundTasks):
         if id in db["stop_flags"]: db["stop_flags"].remove(id)
         db["targets"][id]["status"] = "running"
         db["targets"][id]["progress"] = 0
-        db["targets"][id]["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None}
+        db["targets"][id]["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None}
         background_tasks.add_task(execute_full_workflow, id)
         return {"status": "started"}
     return {"error": "not found"}, 404
@@ -128,7 +128,7 @@ async def execute_full_workflow(id: str):
         return id in db["stop_flags"]
 
     def build_http_context():
-        headers = {"User-Agent": "CypherRecon/1.7 (Ethical Security Analysis)"}
+        headers = {"User-Agent": "CypherRecon/1.9 (Ethical Security Analysis)"}
         cookies = []
         for c in creds:
             if not c.get("enabled"): continue
@@ -147,7 +147,7 @@ async def execute_full_workflow(id: str):
     try:
         log(f"Starting workflow for {host} in {mode.upper()} mode.", "info")
 
-        # Module 1: Subdomain Enumeration
+        # Phase 1: Subdomain Enumeration
         if modules.get("subdomain_enumeration") and not is_stopped():
             t["activeModule"] = "subdomain_enumeration"
             log("Phase 1: Subdomain Discovery...")
@@ -159,14 +159,15 @@ async def execute_full_workflow(id: str):
                 t["results"]["subdomains"] = [s for s in stdout.decode().strip().split('\n') if s]
                 log(f"Found {len(t['results']['subdomains'])} subdomains.", "success")
             else:
-                log("Subfinder not found. Using passive discovery.", "warn")
-            t["progress"] = 20
+                log("Subfinder not found. Using passive fallback.", "warn")
+            t["progress"] = 15
 
-        # Module 2: Port Scanning
+        # Phase 2: Port Scanning
         web_ports = []
+        tls_ports = []
         if modules.get("port_scanning") and not is_stopped():
             t["activeModule"] = "port_scanning"
-            log("Phase 2: Rapid Port Discovery...")
+            log("Phase 2: Rapid Port Discovery (Full 65k Scan)...")
             cmd_fast = ['nmap', '-p-', '--open', '-T4', host]
             proc = await asyncio.create_subprocess_exec(*cmd_fast, stdout=asyncio.subprocess.PIPE)
             stdout, _ = await proc.communicate()
@@ -174,11 +175,11 @@ async def execute_full_workflow(id: str):
             found_ports = []
             for line in stdout.decode().split('\n'):
                 if "/tcp" in line or "/udp" in line:
-                    port = line.split('/')[0].strip()
-                    if port.isdigit(): found_ports.append(port)
+                    port_str = line.split('/')[0].strip()
+                    if port_str.isdigit(): found_ports.append(port_str)
             
             if found_ports and not is_stopped():
-                log(f"Phase 2.1: Service analysis on {len(found_ports)} ports...", "info")
+                log(f"Service analysis on {len(found_ports)} ports...", "info")
                 ports_arg = ",".join(found_ports)
                 cmd_deep = ['nmap', '-sCV', '-p', ports_arg, host]
                 proc_deep = await asyncio.create_subprocess_exec(*cmd_deep, stdout=asyncio.subprocess.PIPE)
@@ -190,70 +191,127 @@ async def execute_full_workflow(id: str):
                         parts = line.split()
                         if len(parts) >= 3:
                             p_val = int(parts[0].split('/')[0])
+                            service = parts[2]
                             ports_results.append({
-                                "port": p_val, "service": parts[2], "state": parts[1], 
+                                "port": p_val, "service": service, "state": parts[1], 
                                 "version": " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
                             })
-                            if p_val in [80, 443, 8080, 8443] or parts[2] in ["http", "https"]:
+                            if p_val in [80, 443, 8080, 8443] or service in ["http", "https"]:
                                 web_ports.append(p_val)
+                            if p_val == 443 or service == "https" or "ssl" in service or "tls" in service:
+                                tls_ports.append(p_val)
                 t["results"]["portScanResults"] = ports_results
                 log("Service analysis complete.", "success")
             t["progress"] = 40
 
-        # Module 3: Web Surface
-        if not is_stopped() and (web_ports or modules.get("web_surface_scan")):
+        # Phase 3: Web Surface (Security Headers)
+        if (modules.get("web_surface_scan") or web_ports) and not is_stopped():
             t["activeModule"] = "web_surface_scan"
-            log("Phase 3: Security Header Analysis...")
+            log("Phase 3: Web Security Header Analysis...")
             headers, _ = build_http_context()
+            results = {"urls_tested": [], "ports_used": web_ports, "headers": [], "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}}
             
-            url = f"https://{host}"
-            async with httpx.AsyncClient(headers=headers, follow_redirects=True, verify=False) as client:
-                try:
-                    resp = await client.get(url, timeout=10)
-                    surface_results = {"urls_tested": [str(resp.url)], "ports_used": web_ports, "headers": [], "summary": {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 0}}
-                    # ... Header logic (omitted for brevity but same as before) ...
-                    t["results"]["webSurface"] = surface_results
-                    log("Web surface scan complete.", "success")
-                except:
-                    log("Web surface scan failed.", "warn")
+            async with httpx.AsyncClient(headers=headers, follow_redirects=True, verify=False, timeout=10) as client:
+                for p in web_ports:
+                    url = f"{'https' if p in [443, 8443] else 'http'}://{host}:{p}"
+                    try:
+                        resp = await client.get(url)
+                        results["urls_tested"].append(str(resp.url))
+                        
+                        header_defs = [
+                            ("Content-Security-Policy", "high"), ("Strict-Transport-Security", "medium"),
+                            ("X-Frame-Options", "medium"), ("X-Content-Type-Options", "low"),
+                            ("Referrer-Policy", "low"), ("Permissions-Policy", "low"),
+                            ("Server", "info"), ("X-Powered-By", "info")
+                        ]
+                        
+                        for h_name, h_sev in header_defs:
+                            val = resp.headers.get(h_name)
+                            status = "ok" if val else "missing"
+                            if h_sev == "info": status = "info"
+                            
+                            results["headers"].append({
+                                "name": h_name, "value": val, "status": status, "severity": h_sev if status == "missing" else "none"
+                            })
+                            results["summary"]["tested"] += 1
+                            if status == "ok": results["summary"]["ok"] += 1
+                            elif status == "missing": results["summary"]["missing"] += 1
+                    except: log(f"Failed to fetch {url}", "warn")
+            
+            t["results"]["webSurface"] = results
+            log("Web surface analysis complete.", "success")
             t["progress"] = 60
 
-        # Module 5: Screenshotting (Playwright)
+        # Phase 4: SSL/TLS Analysis
+        if modules.get("tls_analysis") and tls_ports and not is_stopped():
+            t["activeModule"] = "tls_analysis"
+            log("Phase 4: SSL/TLS Protocol & Cipher Analysis...")
+            tls_results = {"ports_used": tls_ports, "versions": [], "ciphers": [], "summary": {"supported_versions": 0, "insecure_versions": 0, "weak_ciphers": 0, "insecure_ciphers": 0}}
+            
+            # Helper to check TLS version
+            def check_tls(target_host, port, version_name, ssl_const):
+                try:
+                    ctx = ssl.SSLContext(ssl_const)
+                    with socket.create_connection((target_host, port), timeout=5) as sock:
+                        with ctx.wrap_socket(sock, server_hostname=target_host) as ssock:
+                            cipher = ssock.cipher()
+                            return True, cipher[0]
+                except: return False, None
+
+            protocols = [
+                ("TLS 1.3", ssl.PROTOCOL_TLS_CLIENT if hasattr(ssl, 'PROTOCOL_TLS_CLIENT') else ssl.PROTOCOL_TLS),
+                ("TLS 1.2", ssl.PROTOCOL_TLSv1_2),
+                ("TLS 1.1", ssl.PROTOCOL_TLSv1_1),
+                ("TLS 1.0", ssl.PROTOCOL_TLSv1),
+            ]
+            
+            for p_name, p_const in protocols:
+                supported, cipher = check_tls(host, tls_ports[0], p_name, p_const)
+                severity = "none"
+                if supported:
+                    tls_results["summary"]["supported_versions"] += 1
+                    if p_name in ["TLS 1.0", "TLS 1.1"]:
+                        tls_results["summary"]["insecure_versions"] += 1
+                        severity = "high"
+                    else: severity = "low"
+                    
+                    if cipher:
+                        tls_results["ciphers"].append({"name": cipher, "status": "ok"})
+                
+                tls_results["versions"].append({"version": p_name, "supported": supported, "cipher": cipher, "severity": severity})
+
+            t["results"]["tlsData"] = tls_results
+            log(f"TLS Analysis complete. Found {tls_results['summary']['supported_versions']} protocols.", "success")
+            t["progress"] = 80
+
+        # Phase 5: Screenshotting
         if modules.get("screenshotting") and not is_stopped():
             t["activeModule"] = "screenshotting"
-            log("Phase 5: Capturing visual snapshot (Playwright)...")
+            log("Phase 5: Capturing visual snapshot...")
             headers, cookies = build_http_context()
-            
             try:
                 async with async_playwright() as p:
                     browser = await p.chromium.launch(headless=True)
                     context = await browser.new_context(extra_http_headers=headers)
                     if cookies: await context.add_cookies(cookies)
-                    
                     page = await context.new_page()
                     target_url = f"https://{host}"
-                    try:
-                        await page.goto(target_url, timeout=30000, wait_until="networkidle")
-                    except:
-                        target_url = f"http://{host}"
-                        await page.goto(target_url, timeout=30000, wait_until="networkidle")
-                    
+                    try: await page.goto(target_url, timeout=30000, wait_until="networkidle")
+                    except: await page.goto(f"http://{host}", timeout=30000, wait_until="networkidle")
                     screenshot_bytes = await page.screenshot(full_page=False)
-                    b64 = base64.b64encode(screenshot_bytes).decode()
-                    t["results"]["screenshots"].append(f"data:image/png;base64,{b64}")
+                    t["results"]["screenshots"].append(f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}")
                     await browser.close()
-                log("Snapshot captured successfully.", "success")
-            except Exception as e:
-                log(f"Screenshot failed: {str(e)}", "error")
-            t["progress"] = 90
+                log("Snapshot captured.", "success")
+            except Exception as e: log(f"Screenshot failed: {str(e)}", "error")
+            t["progress"] = 95
 
         if not is_stopped():
             t["status"] = "completed"
             t["progress"] = 100
             t["lastRunAt"] = int(time.time()*1000)
-            log("Full sequence completed.", "success")
+            log("Full sequence completed successfully.", "success")
         else:
-            log("Sequence aborted.", "warn")
+            log("Sequence aborted by user.", "warn")
             t["status"] = "failed"
 
     except Exception as e:

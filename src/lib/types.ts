@@ -34,7 +34,8 @@ export type ReconModuleType =
   | 'tech_stack' 
   | 'api_discovery' 
   | 'screenshotting'
-  | 'web_surface_scan';
+  | 'web_surface_scan'
+  | 'tls_analysis';
 
 export interface OsintFinding {
   label: string;
@@ -61,6 +62,30 @@ export interface WebSurfaceData {
     missing: number;
     weak: number;
     info: number;
+  };
+}
+
+export interface TLSVersionInfo {
+  version: string;
+  supported: boolean;
+  cipher?: string;
+  severity: 'low' | 'medium' | 'high' | 'none';
+}
+
+export interface TLSCipherInfo {
+  name: string;
+  status: 'ok' | 'weak' | 'insecure';
+}
+
+export interface TLSData {
+  ports_used: number[];
+  versions: TLSVersionInfo[];
+  ciphers: TLSCipherInfo[];
+  summary: {
+    supported_versions: number;
+    insecure_versions: number;
+    weak_ciphers: number;
+    insecure_ciphers: number;
   };
 }
 
@@ -94,6 +119,7 @@ export interface ScanResults {
   apiEndpoints?: string[];
   screenshots?: string[];
   webSurface?: WebSurfaceData;
+  tlsData?: TLSData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 

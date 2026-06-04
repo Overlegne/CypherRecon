@@ -39,7 +39,8 @@ import {
   XCircle,
   Eye,
   EyeOff,
-  Layers
+  Layers,
+  KeyRound
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -59,6 +60,7 @@ import { TerminalLogs } from './TerminalLogs';
 import { ModuleConfig } from './ModuleConfig';
 import { RiskAnalysisView } from './RiskAnalysisView';
 import { WebSurfaceView } from './WebSurfaceView';
+import { TLSAnalysisView } from './TLSAnalysisView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -79,6 +81,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   api_discovery: true,
   screenshotting: true,
   web_surface_scan: true,
+  tls_analysis: true,
 };
 
 export default function Dashboard() {
@@ -220,7 +223,7 @@ export default function Dashboard() {
                     <Input 
                       placeholder="example.com or 192.168.1.1" 
                       value={newHost}
-                      onChange={(e) => setNewHost(e.target.value)}
+                      onChange={(e) => setNewHost(e.target.value || '')}
                     />
                   </div>
                   <div className="space-y-3">
@@ -271,10 +274,9 @@ export default function Dashboard() {
                               <div className="flex-1">
                                 <Label className="text-[10px] uppercase font-bold text-muted-foreground">Label</Label>
                                 <Input 
-                                  size={1}
                                   className="h-8 text-sm"
                                   value={cred.label} 
-                                  onChange={(e) => updateCredential(cred.id, { label: e.target.value })} 
+                                  onChange={(e) => updateCredential(cred.id, { label: e.target.value || '' })} 
                                 />
                               </div>
                               <div className="w-[180px]">
@@ -316,7 +318,7 @@ export default function Dashboard() {
                                     className="h-8 text-sm"
                                     placeholder="X-API-Key" 
                                     value={cred.headerName || ''} 
-                                    onChange={(e) => updateCredential(cred.id, { headerName: e.target.value })}
+                                    onChange={(e) => updateCredential(cred.id, { headerName: e.target.value || '' })}
                                   />
                                 </div>
                               )}
@@ -326,7 +328,7 @@ export default function Dashboard() {
                                   <Input 
                                     className="h-8 text-sm"
                                     value={cred.username || ''} 
-                                    onChange={(e) => updateCredential(cred.id, { username: e.target.value })}
+                                    onChange={(e) => updateCredential(cred.id, { username: e.target.value || '' })}
                                   />
                                 </div>
                               )}
@@ -338,7 +340,7 @@ export default function Dashboard() {
                                       type={showSecrets[cred.id] ? "text" : "password"}
                                       className="h-8 text-sm pr-8"
                                       value={cred.password || ''} 
-                                      onChange={(e) => updateCredential(cred.id, { password: e.target.value })}
+                                      onChange={(e) => updateCredential(cred.id, { password: e.target.value || '' })}
                                     />
                                     <Button 
                                       variant="ghost" 
@@ -359,7 +361,7 @@ export default function Dashboard() {
                                       type={showSecrets[cred.id] ? "text" : "password"}
                                       className="h-8 text-sm pr-8"
                                       value={cred.value || ''} 
-                                      onChange={(e) => updateCredential(cred.id, { value: e.target.value })}
+                                      onChange={(e) => updateCredential(cred.id, { value: e.target.value || '' })}
                                     />
                                     <Button 
                                       variant="ghost" 
@@ -520,6 +522,7 @@ export default function Dashboard() {
                   <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
                   <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
                   <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
+                  <TabsTrigger value="tls" className="gap-2"><KeyRound size={14} /> SSL/TLS</TabsTrigger>
                   <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                   <TabsTrigger value="modules" className="gap-2"><Settings2 size={14} /> Modules</TabsTrigger>
                   <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
@@ -718,6 +721,14 @@ export default function Dashboard() {
                     <WebSurfaceView data={selectedTarget.results.webSurface} />
                   ) : (
                     <div className="py-20 text-center opacity-40">Awaiting Web Surface security scan...</div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="tls" className="mt-6 space-y-6">
+                  {selectedTarget.results?.tlsData ? (
+                    <TLSAnalysisView data={selectedTarget.results.tlsData} />
+                  ) : (
+                    <div className="py-20 text-center opacity-40">Awaiting SSL/TLS analysis results...</div>
                   )}
                 </TabsContent>
 
