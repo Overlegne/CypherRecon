@@ -16,7 +16,7 @@ CypherRecon is een dashboard voor het beheren van doelwit-reconnaissance. Het sc
   ```bash
   pip install fastapi uvicorn pydantic httpx
   ```
-- **API Key**: Haal een gratis API-key op via [Google AI Studio](https://aistudio.google.com/app/apikey) en zet deze in het `.env` bestand van dit project.
+- **API Key**: Haal een gratis API-key op via [Google AI Studio](https://aistudio.google.com/app/apikey) en zet deze in het `.env` bestand in de hoofdmap van dit project.
 
 ### 2. Start de Python Scanner
 Sla de onderstaande code op als `main.py` op je lokale machine en start deze:
