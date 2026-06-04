@@ -39,7 +39,8 @@ import {
   PlusCircle,
   XCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Layers
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -58,6 +59,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { TerminalLogs } from './TerminalLogs';
 import { ModuleConfig } from './ModuleConfig';
 import { RiskAnalysisView } from './RiskAnalysisView';
+import { WebSurfaceView } from './WebSurfaceView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -77,6 +79,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   tech_stack: true,
   api_discovery: true,
   screenshotting: true,
+  web_surface_scan: true,
 };
 
 export default function Dashboard() {
@@ -506,7 +509,7 @@ export default function Dashboard() {
                   <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
                   <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
                   <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
-                  <TabsTrigger value="surface" className="gap-2"><Cpu size={14} /> Web Surface</TabsTrigger>
+                  <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
                   <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                   <TabsTrigger value="modules" className="gap-2"><Settings2 size={14} /> Modules</TabsTrigger>
                   <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
@@ -701,39 +704,11 @@ export default function Dashboard() {
                 </TabsContent>
 
                 <TabsContent value="surface" className="mt-6 space-y-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <Card className="lg:col-span-1">
-                      <CardHeader>
-                        <CardTitle className="text-lg">Technological Stack</CardTitle>
-                        {selectedTarget.mode === 'greybox' && <CardDescription className="text-[10px] text-accent">Deep scan results with credentials</CardDescription>}
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-col gap-2">
-                          {selectedTarget.results?.techStack?.map((tech, i) => (
-                            <div key={i} className="flex items-center gap-2 p-2 rounded bg-secondary/40 border border-border">
-                              <div className="w-2 h-2 rounded-full bg-primary" />
-                              <span className="text-sm font-medium">{tech}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="lg:col-span-2">
-                      <CardHeader>
-                        <CardTitle className="text-lg">Endpoints Discovered</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {selectedTarget.results?.apiEndpoints?.map((endpoint, i) => (
-                            <div key={i} className="group flex items-center justify-between p-2 rounded bg-card border border-border hover:border-primary/40 transition-colors">
-                              <code className="text-xs text-primary">{endpoint}</code>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                  {selectedTarget.results?.webSurface ? (
+                    <WebSurfaceView data={selectedTarget.results.webSurface} />
+                  ) : (
+                    <div className="py-20 text-center opacity-40">Awaiting Web Surface security scan...</div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="snapshots" className="mt-6">

@@ -33,13 +33,35 @@ export type ReconModuleType =
   | 'port_scanning' 
   | 'tech_stack' 
   | 'api_discovery' 
-  | 'screenshotting';
+  | 'screenshotting'
+  | 'web_surface_scan';
 
 export interface OsintFinding {
   label: string;
   description: string;
   url?: string;
   type: 'leak' | 'info' | 'social' | 'code';
+}
+
+export interface WebHeader {
+  name: string;
+  status: 'ok' | 'missing' | 'weak' | 'info';
+  value: string | null;
+  severity: 'low' | 'medium' | 'high' | 'none';
+  recommendation?: string;
+}
+
+export interface WebSurfaceData {
+  urls_tested: string[];
+  ports_used: number[];
+  headers: WebHeader[];
+  summary: {
+    tested: number;
+    ok: number;
+    missing: number;
+    weak: number;
+    info: number;
+  };
 }
 
 export interface Target {
@@ -71,6 +93,7 @@ export interface ScanResults {
   techStack?: string[];
   apiEndpoints?: string[];
   screenshots?: string[];
+  webSurface?: WebSurfaceData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 
