@@ -73,7 +73,8 @@ export function useScannerStore() {
         // Check if any child target needs AI analysis
         for (const child of updatedGroup.childTargets) {
           if (child.status === 'completed' && child.results && !child.results.riskAnalysis) {
-            if (child.results.portScanResults?.length || child.results.subdomains?.length) {
+            // Check if there is enough data for analysis
+            if (child.results.portScanResults?.length || child.results.subdomains?.length || child.results.webSurface) {
               try {
                 const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
                   target: child.host,

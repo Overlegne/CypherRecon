@@ -6,7 +6,7 @@ CypherRecon is een enterprise-grade dashboard voor het beheren van multi-target 
 
 ### 1. Vereisten
 - Installeer **Nmap** en zorg dat het in je systeem-pad staat (`nmap --version`).
-- Installeer **Subfinder** voor echte subdomain discovery.
+- Installeer **Subfinder** voor subdomain discovery.
 - Installeer Python afhankelijkheden:
   ```bash
   pip install fastapi uvicorn pydantic httpx playwright beautifulsoup4
@@ -47,10 +47,10 @@ class Credential(BaseModel):
     type: str
     label: str
     value: str
-    headerName: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    notes: Optional[str] = None
+    headerName: Optional[str] = ""
+    username: Optional[str] = ""
+    password: Optional[str] = ""
+    notes: Optional[str] = ""
     enabled: bool
 
 class GroupCreate(BaseModel):
@@ -79,7 +79,7 @@ def add_group(g: GroupCreate):
     for host in g.hosts:
         child_targets.append({
             "id": str(uuid.uuid4()),
-            "host": host,
+            "host": host.rstrip('/'),
             "status": "idle",
             "progress": 0,
             "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None}

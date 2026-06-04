@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useScannerStore } from '@/lib/scanner-store';
-import { TargetGroup, ReconMode, ReconModuleType, Credential, CredentialType, ChildTarget, ScanStatus } from '@/lib/types';
+import { ReconMode, ReconModuleType, Credential, CredentialType, ScanStatus } from '@/lib/types';
 import { 
   Plus, 
   Terminal, 
@@ -11,32 +11,19 @@ import {
   Play, 
   Square,
   Settings2, 
-  FileText, 
-  Globe, 
-  ArrowRight,
   Clock,
   LayoutDashboard,
   Search,
   Network,
-  Unplug,
-  Settings,
-  Code,
-  Users,
-  AlertTriangle,
-  Camera,
-  Maximize2,
+  Globe,
   Wifi,
   WifiOff,
-  Key,
-  Lock,
+  Settings,
+  Camera,
   PlusCircle,
   XCircle,
-  Eye,
-  EyeOff,
   Layers,
   KeyRound,
-  MoreVertical,
-  ChevronDown,
   Link as LinkIcon,
   ShieldEllipsis
 } from 'lucide-react';
@@ -55,8 +42,6 @@ import {
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { ScrollArea } from './ui/scroll-area';
 import { TerminalLogs } from './TerminalLogs';
-import { ModuleConfig } from './ModuleConfig';
-import { RiskAnalysisView } from './RiskAnalysisView';
 import { WebSurfaceView } from './WebSurfaceView';
 import { TLSAnalysisView } from './TLSAnalysisView';
 import { URLHarvestingView } from './URLHarvestingView';
@@ -107,7 +92,6 @@ export default function Dashboard() {
   const [newMode, setNewMode] = useState<ReconMode>('blackbox');
   const [selectedModules, setSelectedModules] = useState<Record<ReconModuleType, boolean>>(INITIAL_MODULES);
   const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -158,10 +142,6 @@ export default function Dashboard() {
 
   const removeCredential = (id: string) => {
     setCredentials(credentials.filter(c => c.id !== id));
-  };
-
-  const toggleSecret = (id: string) => {
-    setShowSecrets(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleModuleSelection = (module: ReconModuleType) => {
@@ -330,14 +310,14 @@ export default function Dashboard() {
                                   </div>
                                   <div className="space-y-1">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Password</Label>
-                                    <Input type="password" className="h-8 text-sm" value={cred.password || ''} onChange={(e) => updateCredential(cred.id, { password: e.target.value })} />
+                                    <Input type="password" placeholder="••••••••" className="h-8 text-sm" value={cred.password || ''} onChange={(e) => updateCredential(cred.id, { password: e.target.value })} />
                                   </div>
                                 </>
                               )}
                               {cred.type !== 'username_password' && (
                                 <div className="col-span-2 space-y-1">
                                   <Label className="text-[10px] uppercase font-bold text-muted-foreground">Value / Secret</Label>
-                                  <Input type="password" className="h-8 text-sm" value={cred.value || ''} onChange={(e) => updateCredential(cred.id, { value: e.target.value })} />
+                                  <Input type="password" placeholder="••••••••" className="h-8 text-sm" value={cred.value || ''} onChange={(e) => updateCredential(cred.id, { value: e.target.value })} />
                                 </div>
                               )}
                             </div>
@@ -438,7 +418,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1.5"><Clock size={14} /> Created {new Date(selectedGroup.createdAt).toLocaleDateString()}</span>
                   <span className={`flex items-center gap-1.5 ${selectedGroup.mode === 'greybox' ? 'text-accent font-bold' : ''}`}>
-                    {selectedGroup.mode === 'greybox' ? <Lock size={14} /> : <Settings2 size={14} />} 
+                    {selectedGroup.mode === 'greybox' ? <Shield size={14} /> : <Settings2 size={14} />} 
                     {selectedGroup.mode} Mode
                   </span>
                 </div>
@@ -482,7 +462,6 @@ export default function Dashboard() {
                   <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
                     <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
                     <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
-                    <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
                     <TabsTrigger value="harvesting" className="gap-2"><LinkIcon size={14} /> URL Harvesting</TabsTrigger>
                     <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
                     <TabsTrigger value="cors" className="gap-2"><ShieldEllipsis size={14} /> CORS Audit</TabsTrigger>
@@ -605,7 +584,7 @@ export default function Dashboard() {
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
              <Shield size={80} className="text-primary opacity-20 mb-6" />
              <h2 className="text-3xl font-bold mb-4">CypherRecon Enterprise</h2>
-             <p className="text-muted-foreground max-w-md">Select a target group or create a new multi-target run to begin analysis.</p>
+             <p className="text-muted-foreground max-w-md">Select a target group of create a new multi-target run to begin analysis.</p>
           </div>
         )}
       </main>

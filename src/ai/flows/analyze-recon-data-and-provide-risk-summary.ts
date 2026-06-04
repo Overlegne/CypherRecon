@@ -68,9 +68,26 @@ Harvested URLs:
 - Interesting paths: {{#each urlHarvesting.urls}}{{#if this.interesting}}{{{this.url}}} (Type: {{this.type}}), {{/if}}{{/each}}
 {{/if}}
 
-{{#if webSurface}}Web Surface: {{webSurface.summary.missing}} missing headers, {{webSurface.summary.weak}} weak.{{/if}}
-{{#if tlsData}}TLS: {{tlsData.summary.insecure_versions}} insecure protocols.{{/if}}
-{{#if cors_audit}}CORS Audit: Found {{cors_audit.summary.high_risk}} high risk misconfigurations.{{/if}}
+{{#if webSurface}}
+Web Surface: 
+- Tested: {{webSurface.summary.tested}}
+- OK: {{webSurface.summary.ok}}
+- Missing: {{webSurface.summary.missing}}
+- Weak: {{webSurface.summary.weak}}
+{{/if}}
+
+{{#if tlsData}}
+TLS Analysis:
+- Supported: {{tlsData.summary.supported_versions}}
+- Insecure: {{tlsData.summary.insecure_versions}}
+- Weak Ciphers: {{tlsData.summary.weak_ciphers}}
+{{/if}}
+
+{{#if cors_audit}}
+CORS Audit: 
+- Tested Endpoints: {{cors_audit.summary.tested_endpoints}}
+- High Risk Findings: {{cors_audit.summary.high_risk}}
+{{/if}}
 
 Identify significant risks. Focus on exposed admin panels, sensitive backup files, unprotected API endpoints, and CORS misconfigurations.
 Provide a risk score 0-100 and a list of potential vulnerabilities with recommendations.`,
