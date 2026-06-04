@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -151,7 +152,8 @@ export function useScannerStore() {
           mockResults.techStack = ['React 18.2.0', 'Next.js 14.0.0', 'Tailwind CSS', 'Vercel Edge Runtime', 'AWS CloudFront', 'Cloudflare WAF'];
           addLog(`Detected tech stack via Wappalyzer fingerprinting and header analysis.`, 'success');
         } else if (module === 'api_discovery') {
-          mockResults.apiEndpoints = ['/api/v1/users', '/api/v1/login', '/api/v2/debug/config', '/v2/swagger.json', '/graphiql', '/.well-known/security.txt'];
+          // Add a leading slash if missing for consistency
+          mockResults.apiEndpoints = ['/api/v1/users', '/api/v1/login', '/api/v2/debug/config', '/v2/swagger.json', '/graphiql', '/.well-known/security.txt', '/robots.txt', '/sitemap.xml'];
           addLog(`Discovered ${mockResults.apiEndpoints.length} API endpoints via directory busting and crawler.`, 'success');
         } else if (module === 'osint') {
           mockResults.osintData = [

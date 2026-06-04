@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -26,7 +27,8 @@ import {
   ExternalLink,
   Code,
   Users,
-  AlertTriangle
+  AlertTriangle,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -110,6 +112,11 @@ export default function Dashboard() {
       case 'leak': return <AlertTriangle className="text-red-400" size={18} />;
       default: return <Unplug className="text-yellow-500" size={18} />;
     }
+  };
+
+  const handleOpenEndpoint = (host: string, path: string) => {
+    const protocol = host.includes('://') ? '' : 'https://';
+    window.open(`${protocol}${host}${path}`, '_blank');
   };
 
   return (
@@ -519,9 +526,22 @@ export default function Dashboard() {
                           {selectedTarget.results?.apiEndpoints?.map((endpoint, i) => (
                             <div key={i} className="group flex items-center justify-between p-2 rounded bg-card border border-border hover:border-primary/40 transition-colors">
                               <code className="text-xs text-primary">{endpoint}</code>
-                              <Badge variant="outline" className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity uppercase">API</Badge>
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => handleOpenEndpoint(selectedTarget.host, endpoint)}
+                                >
+                                  <ExternalLink size={12} />
+                                </Button>
+                                <Badge variant="outline" className="text-[9px] uppercase">API</Badge>
+                              </div>
                             </div>
                           ))}
+                          {(!selectedTarget.results?.apiEndpoints || selectedTarget.results.apiEndpoints.length === 0) && (
+                            <p className="text-sm text-muted-foreground italic">No API endpoints mapped.</p>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
