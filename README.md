@@ -7,6 +7,11 @@ CypherRecon is a dashboard for managing target reconnaissance. It separates the 
 
 ### 1. Prerequisites
 - Install **Nmap** and ensure it's in your system path (`nmap --version`).
+- (Optional but Recommended) Install **Subfinder** for real subdomain discovery:
+  ```bash
+  # Go must be installed
+  go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+  ```
 - Install Python dependencies:
   ```bash
   pip install fastapi uvicorn pydantic
@@ -104,10 +109,23 @@ async def execute_full_workflow(id: str):
         if modules.get("subdomain_enumeration"):
             t["activeModule"] = "subdomain_enumeration"
             log(f"Starting subdomain discovery for {host}...")
-            # STUB: Call subfinder or amass here
-            await asyncio.sleep(2)
-            t["results"]["subdomains"] = [f"api.{host}", f"dev.{host}", f"staging.{host}"]
-            log("Discovered 3 potential subdomains.", "success")
+            
+            # REAL COMMAND: Use subfinder if installed
+            try:
+                cmd = ['subfinder', '-d', host, '-silent']
+                process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await process.communicate()
+                if process.returncode == 0:
+                    subs = stdout.decode().strip().split('\n')
+                    t["results"]["subdomains"] = [s for s in subs if s]
+                    log(f"Subfinder complete. Discovered {len(t['results']['subdomains'])} subdomains.", "success")
+                else:
+                    log("Subfinder failed or not installed. Falling back to internal list.", "warn")
+                    t["results"]["subdomains"] = [f"api.{host}", f"dev.{host}", f"staging.{host}"]
+            except Exception:
+                log("Subfinder binary not found. Using simulation.", "warn")
+                t["results"]["subdomains"] = [f"api.{host}", f"dev.{host}", f"staging.{host}"]
+            
             t["progress"] = 20
 
         # Module 2: Port Scanning (REAL NMAP - ALL PORTS)
