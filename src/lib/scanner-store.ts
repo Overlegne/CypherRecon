@@ -1,15 +1,14 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Target, ReconModuleType, ReconMode, Credential } from './types';
+import { TargetGroup, ReconModuleType, ReconMode, Credential, ChildTarget } from './types';
 import { analyzeReconDataAndProvideRiskSummary } from '@/ai/flows/analyze-recon-data-and-provide-risk-summary';
 import { useSettingsStore } from './settings-store';
 import { toast } from '@/hooks/use-toast';
 
 export function useScannerStore() {
-  const [targets, setTargets] = useState<Target[]>([]);
-  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [targetGroups, setTargetGroups] = useState<TargetGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const { settings } = useSettingsStore();
   const pollingRefs = useRef<Record<string, NodeJS.Timeout>>({});
@@ -40,7 +39,7 @@ export function useScannerStore() {
     }
   }, [settings?.apiUrl]);
 
-  const fetchTargets = useCallback(async () => {
+  const fetchGroups = useCallback(async () => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!isBackendConnected || !url) return;
@@ -51,74 +50,74 @@ export function useScannerStore() {
       });
       if (response.ok) {
         const data = await response.json();
-        setTargets(data);
+        setTargetGroups(data);
       }
     } catch (e) {
-      console.error("Fetch targets failed:", e);
+      console.error("Fetch groups failed:", e);
     }
   }, [settings?.apiUrl, isBackendConnected]);
 
-  const pollStatus = useCallback(async (targetId: string) => {
+  const pollStatus = useCallback(async (groupId: string) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
     try {
-      const response = await fetch(`${url}/targets/${targetId}`, { 
+      const response = await fetch(`${url}/targets/${groupId}`, { 
         cache: 'no-store',
         mode: 'cors'
       });
       if (response.ok) {
-        const updated = await response.json();
-        setTargets(prev => prev.map(t => t.id === targetId ? updated : t));
+        const updatedGroup: TargetGroup = await response.json();
+        setTargetGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
 
-        if (updated.status === 'completed') {
-          if (pollingRefs.current[targetId]) {
-            clearInterval(pollingRefs.current[targetId]);
-            delete pollingRefs.current[targetId];
-          }
-          
-          if (updated.results && !updated.results.riskAnalysis && (updated.results.portScanResults?.length > 0 || updated.results.subdomains?.length > 0)) {
-            try {
-              const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
-                target: updated.host,
-                ...updated.results
-              });
-              
-              await fetch(`${url}/targets/${targetId}/risk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ riskAnalysis }),
-                mode: 'cors'
-              });
-              fetchTargets();
-            } catch (aiErr) {
-              console.error("AI Analysis failed:", aiErr);
+        // Check if any child target needs AI analysis
+        for (const child of updatedGroup.childTargets) {
+          if (child.status === 'completed' && child.results && !child.results.riskAnalysis) {
+            if (child.results.portScanResults?.length || child.results.subdomains?.length) {
+              try {
+                const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
+                  target: child.host,
+                  ...child.results
+                });
+                
+                await fetch(`${url}/targets/${groupId}/risk`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ childId: child.id, riskAnalysis }),
+                  mode: 'cors'
+                });
+              } catch (aiErr) {
+                console.error("AI Analysis failed for child:", child.host, aiErr);
+              }
             }
           }
-        } else if (updated.status === 'failed') {
-          if (pollingRefs.current[targetId]) {
-            clearInterval(pollingRefs.current[targetId]);
-            delete pollingRefs.current[targetId];
+        }
+
+        if (updatedGroup.status === 'completed' || updatedGroup.status === 'failed') {
+          if (pollingRefs.current[groupId]) {
+            clearInterval(pollingRefs.current[groupId]);
+            delete pollingRefs.current[groupId];
           }
+          fetchGroups();
         }
       }
     } catch (e) {
       console.warn("Polling error:", e);
     }
-  }, [settings?.apiUrl, fetchTargets]);
+  }, [settings?.apiUrl, fetchGroups]);
 
   useEffect(() => {
     checkHealth();
     const interval = setInterval(() => {
       checkHealth();
       if (isBackendConnected) {
-        fetchTargets();
+        fetchGroups();
       }
     }, 4000);
     return () => clearInterval(interval);
-  }, [checkHealth, fetchTargets, isBackendConnected]);
+  }, [checkHealth, fetchGroups, isBackendConnected]);
 
-  const addTarget = useCallback(async (host: string, mode: ReconMode, modules: Record<ReconModuleType, boolean>, credentials?: Credential[]) => {
+  const addTargetGroup = useCallback(async (name: string, hosts: string[], mode: ReconMode, modules: Record<ReconModuleType, boolean>, credentials?: Credential[]) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
@@ -126,24 +125,24 @@ export function useScannerStore() {
       const response = await fetch(`${url}/targets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, mode, modules, credentials }),
+        body: JSON.stringify({ name, hosts, mode, modules, credentials }),
         mode: 'cors'
       });
       
       if (response.ok) {
-        const newTarget = await response.json();
-        setTargets(prev => [newTarget, ...prev]);
-        setSelectedTargetId(newTarget.id);
-        toast({ title: "Target Created", description: `Added ${host} to scanning pool.` });
+        const newGroup = await response.json();
+        setTargetGroups(prev => [newGroup, ...prev]);
+        setSelectedGroupId(newGroup.id);
+        toast({ title: "Target Group Created", description: `Added ${name} with ${hosts.length} targets.` });
       } else {
-        throw new Error("Backend rejected target creation");
+        throw new Error("Backend rejected group creation");
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Backend connection failed." });
     }
   }, [settings?.apiUrl]);
 
-  const deleteTarget = useCallback(async (id: string) => {
+  const deleteTargetGroup = useCallback(async (id: string) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!url) return;
@@ -153,19 +152,19 @@ export function useScannerStore() {
         mode: 'cors'
       });
       if (response.ok) {
-        setTargets(prev => prev.filter(t => t.id !== id));
-        if (selectedTargetId === id) setSelectedTargetId(null);
+        setTargetGroups(prev => prev.filter(g => g.id !== id));
+        if (selectedGroupId === id) setSelectedGroupId(null);
         if (pollingRefs.current[id]) {
           clearInterval(pollingRefs.current[id]);
           delete pollingRefs.current[id];
         }
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Error", description: "Could not delete target." });
+      toast({ variant: "destructive", title: "Error", description: "Could not delete target group." });
     }
-  }, [settings?.apiUrl, selectedTargetId]);
+  }, [settings?.apiUrl, selectedGroupId]);
 
-  const runScan = useCallback(async (targetId: string) => {
+  const runScan = useCallback(async (groupId: string) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     if (!isBackendConnected || !url) {
@@ -174,7 +173,7 @@ export function useScannerStore() {
     }
 
     try {
-      const response = await fetch(`${url}/targets/${targetId}/scan`, {
+      const response = await fetch(`${url}/targets/${groupId}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: settings.scanDefaults, keys: settings.apiKeys }),
@@ -182,21 +181,21 @@ export function useScannerStore() {
       });
 
       if (response.ok) {
-        if (!pollingRefs.current[targetId]) {
-          pollingRefs.current[targetId] = setInterval(() => pollStatus(targetId), 2000);
+        if (!pollingRefs.current[groupId]) {
+          pollingRefs.current[groupId] = setInterval(() => pollStatus(groupId), 2000);
         }
-        fetchTargets();
+        fetchGroups();
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Execution Error", description: "Lost connection to backend engine." });
     }
-  }, [settings?.apiUrl, settings?.scanDefaults, settings?.apiKeys, pollStatus, isBackendConnected, fetchTargets]);
+  }, [settings?.apiUrl, settings?.scanDefaults, settings?.apiKeys, pollStatus, isBackendConnected, fetchGroups]);
 
-  const stopScan = useCallback(async (targetId: string) => {
+  const stopScan = useCallback(async (groupId: string) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
     try {
-      const response = await fetch(`${url}/targets/${targetId}/stop`, {
+      const response = await fetch(`${url}/targets/${groupId}/stop`, {
         method: 'POST',
         mode: 'cors'
       });
@@ -206,17 +205,17 @@ export function useScannerStore() {
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Failed to stop scan." });
     }
-  }, [settings?.apiUrl, fetchTargets]);
+  }, [settings?.apiUrl, fetchGroups]);
 
   return {
-    targets,
-    selectedTargetId,
-    setSelectedTargetId,
-    addTarget,
-    deleteTarget,
+    targets: targetGroups,
+    selectedTargetId: selectedGroupId,
+    setSelectedTargetId: setSelectedGroupId,
+    addTarget: addTargetGroup,
+    deleteTarget: deleteTargetGroup,
     runScan,
     stopScan,
     isBackendConnected,
-    refresh: fetchTargets
+    refresh: fetchGroups
   };
 }

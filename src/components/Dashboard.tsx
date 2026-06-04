@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useScannerStore } from '@/lib/scanner-store';
-import { Target, ReconMode, ReconModuleType, Credential, CredentialType } from '@/lib/types';
+import { TargetGroup, ReconMode, ReconModuleType, Credential, CredentialType, ChildTarget } from '@/lib/types';
 import { 
   Plus, 
   Terminal, 
@@ -14,21 +14,15 @@ import {
   FileText, 
   Globe, 
   ArrowRight,
-  Loader2,
   Clock,
   LayoutDashboard,
   Search,
-  Activity,
   Network,
-  Cpu,
   Unplug,
   Settings,
-  ChevronRight,
-  ExternalLink,
   Code,
   Users,
   AlertTriangle,
-  Link as LinkIcon,
   Camera,
   Maximize2,
   Wifi,
@@ -40,7 +34,9 @@ import {
   Eye,
   EyeOff,
   Layers,
-  KeyRound
+  KeyRound,
+  MoreVertical,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -64,13 +60,14 @@ import { TLSAnalysisView } from './TLSAnalysisView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { SettingsDialog } from './SettingsDialog';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import Image from 'next/image';
+import { cn } from '@/lib/utils';
 
 const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   subdomain_enumeration: true,
@@ -87,11 +84,11 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   const { 
-    targets, 
-    selectedTargetId, 
-    setSelectedTargetId, 
-    addTarget, 
-    deleteTarget, 
+    targets: groups, 
+    selectedTargetId: selectedGroupId, 
+    setSelectedTargetId: setSelectedGroupId, 
+    addTarget: addGroup, 
+    deleteTarget: deleteGroup, 
     runScan,
     stopScan,
     isBackendConnected
@@ -99,22 +96,35 @@ export default function Dashboard() {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [newHost, setNewHost] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newHostsRaw, setNewHostsRaw] = useState('');
   const [newMode, setNewMode] = useState<ReconMode>('blackbox');
   const [selectedModules, setSelectedModules] = useState<Record<ReconModuleType, boolean>>(INITIAL_MODULES);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const selectedTarget = targets.find(t => t.id === selectedTargetId);
+  const selectedGroup = useMemo(() => groups.find(g => g.id === selectedGroupId), [groups, selectedGroupId]);
 
-  const handleAddTarget = () => {
-    if (!newHost) return;
-    addTarget(newHost, newMode, selectedModules, newMode === 'greybox' ? credentials : []);
-    setNewHost('');
+  const selectedChild = useMemo(() => {
+    if (!selectedGroup) return null;
+    if (!selectedChildId) return selectedGroup.childTargets[0] || null;
+    return selectedGroup.childTargets.find(c => c.id === selectedChildId) || selectedGroup.childTargets[0] || null;
+  }, [selectedGroup, selectedChildId]);
+
+  const handleAddGroup = () => {
+    const hosts = newHostsRaw.split('\n').map(h => h.trim()).filter(h => h.length > 0);
+    if (hosts.length === 0) return;
+    
+    const finalName = newGroupName.trim() || `Group ${groups.length + 1}`;
+    addGroup(finalName, hosts, newMode, selectedModules, newMode === 'greybox' ? credentials : []);
+    
+    setNewGroupName('');
+    setNewHostsRaw('');
     setNewMode('blackbox');
     setSelectedModules(INITIAL_MODULES);
     setCredentials([]);
@@ -152,7 +162,7 @@ export default function Dashboard() {
     setSelectedModules(prev => ({ ...prev, [module]: !prev[module] }));
   };
 
-  const getStatusBadge = (status: Target['status']) => {
+  const getStatusBadge = (status: ScanStatus) => {
     switch (status) {
       case 'running': return <Badge className="bg-primary/20 text-primary border-primary/30 animate-pulse">Running</Badge>;
       case 'completed': return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Complete</Badge>;
@@ -203,28 +213,38 @@ export default function Dashboard() {
             <DialogTrigger asChild>
               <Button className="w-full justify-start gap-2 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" size="lg">
                 <Plus size={18} />
-                New Target
+                New Target Group
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
               <DialogHeader>
-                <DialogTitle>Add New Recon Target</DialogTitle>
+                <DialogTitle>Create New Recon Group</DialogTitle>
               </DialogHeader>
               <Tabs defaultValue="general" className="w-full flex-1 flex flex-col overflow-hidden">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="general">Target Info</TabsTrigger>
+                  <TabsTrigger value="general">Group Info</TabsTrigger>
                   <TabsTrigger value="auth" disabled={newMode !== 'greybox'}>Authentication</TabsTrigger>
                   <TabsTrigger value="modules">Module Pipeline</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="general" className="space-y-4 py-4 overflow-y-auto">
                   <div className="space-y-2">
-                    <Label>Domain or IP Address</Label>
+                    <Label>Group Name</Label>
                     <Input 
-                      placeholder="example.com or 192.168.1.1" 
-                      value={newHost}
-                      onChange={(e) => setNewHost(e.target.value || '')}
+                      placeholder="e.g., Client X Infrastructure" 
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Targets (one per line)</Label>
+                    <Textarea 
+                      placeholder="example.com&#10;api.example.com&#10;192.168.1.1" 
+                      className="min-h-[150px] font-code text-sm"
+                      value={newHostsRaw}
+                      onChange={(e) => setNewHostsRaw(e.target.value)}
+                    />
+                    <p className="text-[10px] text-muted-foreground">Enter domains, URLs, or IP addresses.</p>
                   </div>
                   <div className="space-y-3">
                     <Label>Recon Mode</Label>
@@ -262,7 +282,7 @@ export default function Dashboard() {
                     {credentials.length === 0 && (
                       <div className="text-center py-8 border-2 border-dashed border-border rounded-xl opacity-50">
                         <Key size={32} className="mx-auto mb-2 text-muted-foreground" />
-                        <p className="text-sm">No credentials added for this Greybox target.</p>
+                        <p className="text-sm">No credentials added for this Greybox target group.</p>
                       </div>
                     )}
 
@@ -403,7 +423,7 @@ export default function Dashboard() {
               </Tabs>
               <DialogFooter className="pt-4 border-t border-border">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddTarget}>Create Sequence</Button>
+                <Button onClick={handleAddGroup}>Create Group Run</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -411,50 +431,56 @@ export default function Dashboard() {
 
         <ScrollArea className="flex-1 px-3">
           <div className="space-y-2">
-            {targets.length === 0 && (
+            {groups.length === 0 && (
               <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground opacity-40">
                 <Globe size={40} className="mb-2" />
-                <p className="text-sm">No targets added yet</p>
+                <p className="text-sm">No target groups yet</p>
               </div>
             )}
-            {targets.map(target => (
+            {groups.map(group => (
               <div 
-                key={target.id}
-                onClick={() => setSelectedTargetId(target.id)}
+                key={group.id}
+                onClick={() => {
+                  setSelectedGroupId(group.id);
+                  setSelectedChildId(group.childTargets[0]?.id || null);
+                }}
                 className={`group p-4 rounded-xl cursor-pointer transition-all duration-200 border ${
-                  selectedTargetId === target.id 
+                  selectedGroupId === group.id 
                   ? 'bg-primary/10 border-primary/40 shadow-sm' 
                   : 'bg-transparent border-transparent hover:bg-secondary/50'
                 }`}
               >
                 <div className="flex items-start justify-between mb-1">
-                  <h3 className="font-medium text-sm truncate max-w-[150px]">{target.host}</h3>
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <h3 className="font-bold text-sm truncate pr-2">{group.name}</h3>
+                    <p className="text-[10px] text-muted-foreground truncate">{group.childTargets.length} targets</p>
+                  </div>
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button 
                       variant="ghost" 
                       size="icon" 
                       className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => { e.stopPropagation(); deleteTarget(target.id); }}
+                      onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
                     >
                       <Trash2 size={12} />
                     </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                   <Badge variant="outline" className={`text-[10px] uppercase font-bold py-0 h-4 border-muted-foreground/30 ${target.mode === 'greybox' ? 'bg-accent/10 text-accent border-accent/20' : ''}`}>
-                    {target.mode}
+                <div className="flex items-center gap-2 mt-2">
+                   <Badge variant="outline" className={`text-[10px] uppercase font-bold py-0 h-4 border-muted-foreground/30 ${group.mode === 'greybox' ? 'bg-accent/10 text-accent border-accent/20' : ''}`}>
+                    {group.mode}
                    </Badge>
                    <span className="text-[10px] text-muted-foreground">
-                    {target.lastRunAt ? formatDistanceToNow(target.lastRunAt, { addSuffix: true }) : 'Never run'}
+                    {group.lastRunAt ? formatDistanceToNow(group.lastRunAt, { addSuffix: true }) : 'Never run'}
                    </span>
                 </div>
-                {target.status === 'running' && (
+                {group.status === 'running' && (
                   <div className="mt-3 space-y-1">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-primary font-medium">{target.activeModule?.replace(/_/g, ' ')}</span>
-                      <span>{target.progress}%</span>
+                    <Progress value={group.progress} className="h-1" />
+                    <div className="flex items-center justify-between text-[8px] uppercase tracking-widest text-primary font-bold">
+                      <span>RUNNING</span>
+                      <span>{group.progress}%</span>
                     </div>
-                    <Progress value={target.progress} className="h-1" />
                   </div>
                 )}
               </div>
@@ -475,303 +501,301 @@ export default function Dashboard() {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0">
-        {selectedTarget ? (
+        {selectedGroup ? (
           <>
             <header className="p-6 border-b border-border bg-card/10 backdrop-blur-lg flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-1">
-                  <h2 className="text-2xl font-headline font-bold">{selectedTarget.host}</h2>
-                  {getStatusBadge(selectedTarget.status)}
+                  <h2 className="text-2xl font-headline font-bold">{selectedGroup.name}</h2>
+                  {getStatusBadge(selectedGroup.status)}
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1.5"><Clock size={14} /> Created {new Date(selectedTarget.createdAt).toLocaleDateString()}</span>
-                  <span className={`flex items-center gap-1.5 ${selectedTarget.mode === 'greybox' ? 'text-accent font-bold' : ''}`}>
-                    {selectedTarget.mode === 'greybox' ? <Lock size={14} /> : <Settings2 size={14} />} 
-                    {selectedTarget.mode} Mode
-                    {selectedTarget.mode === 'greybox' && ` (${selectedTarget.credentials?.length || 0} Credentials)`}
+                  <span className="flex items-center gap-1.5"><Clock size={14} /> Created {new Date(selectedGroup.createdAt).toLocaleDateString()}</span>
+                  <span className={`flex items-center gap-1.5 ${selectedGroup.mode === 'greybox' ? 'text-accent font-bold' : ''}`}>
+                    {selectedGroup.mode === 'greybox' ? <Lock size={14} /> : <Settings2 size={14} />} 
+                    {selectedGroup.mode} Mode
+                    {selectedGroup.mode === 'greybox' && ` (${selectedGroup.credentials?.length || 0} Credentials)`}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {selectedTarget.status === 'running' ? (
+                {selectedGroup.status === 'running' ? (
                   <Button 
                     variant="destructive"
-                    onClick={() => stopScan(selectedTarget.id)}
+                    onClick={() => stopScan(selectedGroup.id)}
                     className="gap-2"
                   >
                     <Square size={16} fill="currentColor" />
-                    Stop Scan
+                    Stop Group Scan
                   </Button>
                 ) : (
                   <Button 
-                    onClick={() => runScan(selectedTarget.id)} 
+                    onClick={() => runScan(selectedGroup.id)} 
                     disabled={!isBackendConnected}
                     className={`gap-2 ${isBackendConnected ? 'bg-accent text-white hover:bg-accent/90' : 'bg-muted text-muted-foreground'}`}
                   >
                     <Play size={18} />
-                    {selectedTarget.status === 'completed' || selectedTarget.status === 'failed' ? 'Restart Sequence' : 'Start Sequence'}
+                    {selectedGroup.status === 'completed' || selectedGroup.status === 'failed' ? 'Restart Group Scan' : 'Start Group Scan'}
                   </Button>
                 )}
               </div>
             </header>
 
-            <div className="flex-1 overflow-auto p-6 space-y-6">
-              <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
-                  <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
-                  <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
-                  <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
-                  <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
-                  <TabsTrigger value="tls" className="gap-2"><KeyRound size={14} /> SSL/TLS</TabsTrigger>
-                  <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
-                  <TabsTrigger value="modules" className="gap-2"><Settings2 size={14} /> Modules</TabsTrigger>
-                  <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
-                  <TabsTrigger value="report" className="gap-2" disabled={!selectedTarget.results?.riskAnalysis}><FileText size={14} /> Risk Analysis</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="mt-6 space-y-6">
-                  {selectedTarget.status === 'idle' && (
-                    <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                      <div className="p-6 rounded-full bg-primary/5 border border-primary/10">
-                        {selectedTarget.mode === 'greybox' ? <Lock size={48} className="text-accent opacity-50" /> : <Globe size={48} className="text-primary opacity-50" />}
-                      </div>
-                      <div className="max-w-md">
-                        <h3 className="text-xl font-bold mb-2">Ready to initiate {selectedTarget.mode} reconnaissance</h3>
-                        {!isBackendConnected && (
-                          <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
-                            <WifiOff size={14} /> Backend scanner service is currently offline.
-                          </div>
-                        )}
-                        <p className="text-muted-foreground mb-6">
-                          {selectedTarget.mode === 'greybox' 
-                            ? `Authenticated scan mode. Will use ${selectedTarget.credentials?.length || 0} stored credentials for deep analysis.`
-                            : "Standard unauthenticated scan mode. Will map the public attack surface."}
-                        </p>
-                        <Button 
-                          onClick={() => runScan(selectedTarget.id)} 
-                          size="lg" 
-                          className="gap-2"
-                          disabled={!isBackendConnected}
-                        >
-                          Execute Workflow <ArrowRight size={18} />
-                        </Button>
-                      </div>
-                    </div>
+            {/* Child Target Selection Bar */}
+            <div className="px-6 py-2 border-b border-border bg-secondary/20 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase mr-2 whitespace-nowrap">Selected Target:</span>
+              {selectedGroup.childTargets.map(child => (
+                <button
+                  key={child.id}
+                  onClick={() => setSelectedChildId(child.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs transition-all whitespace-nowrap flex items-center gap-2 border",
+                    selectedChildId === child.id 
+                    ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" 
+                    : "bg-background/50 hover:bg-background border-transparent text-muted-foreground"
                   )}
+                >
+                  <Globe size={12} />
+                  {child.host}
+                  {child.status === 'running' && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
+                </button>
+              ))}
+            </div>
 
-                  {selectedTarget.status !== 'idle' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="space-y-6">
-                        <div className="p-6 rounded-xl border border-border bg-card/50">
-                          <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Discovery Findings</h4>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
-                              <span className="block text-2xl font-bold font-code">{selectedTarget.results?.subdomains?.length || 0}</span>
-                              <span className="text-xs text-muted-foreground uppercase">Subdomains</span>
-                            </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
-                              <span className="block text-2xl font-bold font-code">{selectedTarget.results?.portScanResults?.length || 0}</span>
-                              <span className="text-xs text-muted-foreground uppercase">Active Ports</span>
+            <div className="flex-1 overflow-auto p-6 space-y-6">
+              {selectedChild ? (
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
+                    <TabsTrigger value="overview" className="gap-2"><LayoutDashboard size={14} /> Overview</TabsTrigger>
+                    <TabsTrigger value="network" className="gap-2"><Network size={14} /> Network</TabsTrigger>
+                    <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
+                    <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
+                    <TabsTrigger value="tls" className="gap-2"><KeyRound size={14} /> SSL/TLS</TabsTrigger>
+                    <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
+                    <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
+                    <TabsTrigger value="report" className="gap-2" disabled={!selectedChild.results?.riskAnalysis}><FileText size={14} /> Risk Analysis</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="overview" className="mt-6 space-y-6">
+                    {selectedChild.status === 'idle' && (
+                      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                        <div className="p-6 rounded-full bg-primary/5 border border-primary/10">
+                          {selectedGroup.mode === 'greybox' ? <Lock size={48} className="text-accent opacity-50" /> : <Globe size={48} className="text-primary opacity-50" />}
+                        </div>
+                        <div className="max-w-md">
+                          <h3 className="text-xl font-bold mb-2">Ready to initiate reconnaissance for {selectedChild.host}</h3>
+                          <p className="text-muted-foreground mb-6">
+                            Part of target group: <strong>{selectedGroup.name}</strong>
+                          </p>
+                          <Button 
+                            onClick={() => runScan(selectedGroup.id)} 
+                            size="lg" 
+                            className="gap-2"
+                            disabled={!isBackendConnected}
+                          >
+                            Start Group Execution <ArrowRight size={18} />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedChild.status !== 'idle' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="space-y-6">
+                          <div className="p-6 rounded-xl border border-border bg-card/50">
+                            <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Finding Summary: {selectedChild.host}</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                                <span className="block text-2xl font-bold font-code">{selectedChild.results?.subdomains?.length || 0}</span>
+                                <span className="text-xs text-muted-foreground uppercase">Subdomains</span>
+                              </div>
+                              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                                <span className="block text-2xl font-bold font-code">{selectedChild.results?.portScanResults?.length || 0}</span>
+                                <span className="text-xs text-muted-foreground uppercase">Active Ports</span>
+                              </div>
                             </div>
                           </div>
+                          <TerminalLogs logs={selectedChild.results?.logs || []} />
                         </div>
-                        <TerminalLogs logs={selectedTarget.results?.logs || []} />
-                      </div>
-                      <div className="space-y-6">
-                        {selectedTarget.results?.riskAnalysis && (
-                           <div className="p-6 rounded-xl border border-primary/30 bg-primary/5">
-                             <div className="flex items-center justify-between mb-4">
-                               <h4 className="text-sm font-semibold uppercase tracking-wider text-primary">Initial AI Risk Score</h4>
-                               <span className="text-4xl font-bold font-code text-primary">{selectedTarget.results.riskAnalysis.riskScore}</span>
+                        <div className="space-y-6">
+                          {selectedChild.results?.riskAnalysis && (
+                             <div className="p-6 rounded-xl border border-primary/30 bg-primary/5">
+                               <div className="flex items-center justify-between mb-4">
+                                 <h4 className="text-sm font-semibold uppercase tracking-wider text-primary">AI Threat Assessment</h4>
+                                 <span className="text-4xl font-bold font-code text-primary">{selectedChild.results.riskAnalysis.riskScore}</span>
+                               </div>
+                               <Progress value={selectedChild.results.riskAnalysis.riskScore} className="h-2 mb-4" />
+                               <p className="text-xs text-muted-foreground leading-relaxed">
+                                 {selectedChild.results.riskAnalysis.riskSummary}
+                               </p>
                              </div>
-                             <Progress value={selectedTarget.results.riskAnalysis.riskScore} className="h-2 mb-4" />
-                             <p className="text-xs text-muted-foreground leading-relaxed">
-                               {selectedTarget.results.riskAnalysis.riskSummary}
-                             </p>
-                           </div>
-                        )}
-                        {selectedTarget.mode === 'greybox' && (
-                          <Card className="border-accent/30 bg-accent/5">
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-sm flex items-center gap-2">
-                                <Key size={16} className="text-accent" />
-                                Active Credentials for Run
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="space-y-2">
-                                {selectedTarget.credentials?.map((c, i) => (
-                                  <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-background/40">
-                                    <span className="font-medium">{c.label}</span>
-                                    <Badge variant="outline" className="h-4 text-[9px]">{c.type.replace('_', ' ')}</Badge>
+                          )}
+                          <Card className="bg-secondary/10 border-border/50">
+                            <CardContent className="p-4">
+                              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Group Progress</h4>
+                              <div className="space-y-4">
+                                {selectedGroup.childTargets.map(child => (
+                                  <div key={child.id} className="space-y-1">
+                                    <div className="flex items-center justify-between text-[10px]">
+                                      <span className="font-medium truncate max-w-[120px]">{child.host}</span>
+                                      <span className="text-muted-foreground">{child.progress}%</span>
+                                    </div>
+                                    <Progress value={child.progress} className="h-0.5" />
                                   </div>
                                 ))}
                               </div>
                             </CardContent>
                           </Card>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="network" className="mt-6 space-y-6">
-                  {selectedTarget.results?.portScanResults?.length ? (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          <Network size={20} className="text-primary" />
-                          Service Version Scan results (nmap -sCV)
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Port</TableHead>
-                              <TableHead>Service</TableHead>
-                              <TableHead>State</TableHead>
-                              <TableHead>Version Info</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {selectedTarget.results?.portScanResults?.map((res, i) => (
-                              <TableRow key={i}>
-                                <TableCell className="font-code font-bold text-primary">{res.port}</TableCell>
-                                <TableCell className="capitalize">{res.service}</TableCell>
-                                <TableCell>
-                                  <Badge variant={res.state === 'open' ? 'default' : 'outline'} className={res.state === 'open' ? 'bg-green-500 hover:bg-green-600' : ''}>
-                                    {res.state}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-muted-foreground font-code text-xs">{res.version || 'Unknown'}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="py-20 text-center opacity-40">Awaiting network scan results...</div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="discovery" className="mt-6 space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Subdomains Map</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {selectedTarget.results?.subdomains?.length ? selectedTarget.results.subdomains.map((sub, i) => (
-                            <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border">
-                              <span className="font-code text-sm">{sub}</span>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`https://${sub}`, '_blank')}>
-                                <Globe size={14} />
-                              </Button>
-                            </div>
-                          )) : <p className="text-xs text-muted-foreground italic">No subdomains discovered yet.</p>}
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    )}
+                  </TabsContent>
 
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">OSINT & Public Leaks</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          {selectedTarget.results?.osintData?.map((finding, i) => (
-                            <div key={i} className="flex flex-col gap-3 p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 group">
-                              <div className="flex items-start justify-between">
-                                <div className="flex gap-3">
-                                  <div className="mt-0.5">{getOsintIcon(finding.type)}</div>
-                                  <div className="space-y-1">
-                                    <h4 className="text-sm font-bold flex items-center gap-2">
-                                      {finding.label}
-                                      {finding.type === 'leak' && <Badge variant="destructive" className="h-4 text-[9px] uppercase">Critical Leak</Badge>}
-                                    </h4>
-                                    <p className="text-xs text-muted-foreground leading-relaxed">
-                                      {finding.description}
-                                    </p>
+                  <TabsContent value="network" className="mt-6 space-y-6">
+                    {selectedChild.results?.portScanResults?.length ? (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <Network size={20} className="text-primary" />
+                            Active Services: {selectedChild.host}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Port</TableHead>
+                                <TableHead>Service</TableHead>
+                                <TableHead>State</TableHead>
+                                <TableHead>Version Info</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {selectedChild.results?.portScanResults?.map((res, i) => (
+                                <TableRow key={i}>
+                                  <TableCell className="font-code font-bold text-primary">{res.port}</TableCell>
+                                  <TableCell className="capitalize">{res.service}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={res.state === 'open' ? 'default' : 'outline'} className={res.state === 'open' ? 'bg-green-500 hover:bg-green-600' : ''}>
+                                      {res.state}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground font-code text-xs">{res.version || 'Unknown'}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="py-20 text-center opacity-40">No network data yet.</div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="discovery" className="mt-6 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-lg">Subdomains: {selectedChild.host}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {selectedChild.results?.subdomains?.length ? selectedChild.results.subdomains.map((sub, i) => (
+                              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border">
+                                <span className="font-code text-sm">{sub}</span>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(`https://${sub}`, '_blank')}>
+                                  <Globe size={14} />
+                                </Button>
+                              </div>
+                            )) : <p className="text-xs text-muted-foreground italic">No subdomains discovered.</p>}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-lg">Public Findings</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-4">
+                            {selectedChild.results?.osintData?.length ? selectedChild.results.osintData.map((finding, i) => (
+                              <div key={i} className="flex flex-col gap-3 p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex gap-3">
+                                    <div className="mt-0.5">{getOsintIcon(finding.type)}</div>
+                                    <div className="space-y-1">
+                                      <h4 className="text-sm font-bold flex items-center gap-2">
+                                        {finding.label}
+                                      </h4>
+                                      <p className="text-xs text-muted-foreground leading-relaxed">
+                                        {finding.description}
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
-                                {finding.url && (
-                                  <Button 
-                                    variant="outline" 
-                                    size="icon" 
-                                    className="h-8 w-8 shrink-0 hover:bg-yellow-500/10"
-                                    onClick={() => window.open(finding.url, '_blank')}
-                                  >
-                                    <ExternalLink size={14} />
-                                  </Button>
-                                )}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="surface" className="mt-6 space-y-6">
-                  {selectedTarget.results?.webSurface ? (
-                    <WebSurfaceView data={selectedTarget.results.webSurface} />
-                  ) : (
-                    <div className="py-20 text-center opacity-40">Awaiting Web Surface security scan...</div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="tls" className="mt-6 space-y-6">
-                  {selectedTarget.results?.tlsData ? (
-                    <TLSAnalysisView data={selectedTarget.results.tlsData} />
-                  ) : (
-                    <div className="py-20 text-center opacity-40">Awaiting SSL/TLS analysis results...</div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="snapshots" className="mt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {selectedTarget.results?.screenshots?.length ? selectedTarget.results.screenshots.map((url, i) => (
-                      <Card key={i} className="overflow-hidden group">
-                        <div className="relative aspect-video bg-black/50">
-                          <Image 
-                            src={url} 
-                            alt={`Visual Snapshot ${i + 1}`} 
-                            fill 
-                            className="object-cover transition-transform group-hover:scale-105"
-                          />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Button variant="outline" size="sm" className="gap-2 bg-background/50 backdrop-blur" onClick={() => window.open(url, '_blank')}>
-                              <Maximize2 size={14} /> View Fullsize
-                            </Button>
+                            )) : <p className="text-xs text-muted-foreground italic">No OSINT data available.</p>}
                           </div>
-                        </div>
+                        </CardContent>
                       </Card>
-                    )) : (
-                      <div className="col-span-full py-20 text-center opacity-40">No snapshots captured yet.</div>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="surface" className="mt-6 space-y-6">
+                    {selectedChild.results?.webSurface ? (
+                      <WebSurfaceView data={selectedChild.results.webSurface} />
+                    ) : (
+                      <div className="py-20 text-center opacity-40">Awaiting Web Surface scan...</div>
                     )}
-                  </div>
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="modules" className="mt-6">
-                  <ModuleConfig target={selectedTarget} onToggle={(mod) => {}} />
-                </TabsContent>
+                  <TabsContent value="tls" className="mt-6 space-y-6">
+                    {selectedChild.results?.tlsData ? (
+                      <TLSAnalysisView data={selectedChild.results.tlsData} />
+                    ) : (
+                      <div className="py-20 text-center opacity-40">Awaiting SSL/TLS scan...</div>
+                    )}
+                  </TabsContent>
 
-                <TabsContent value="logs" className="mt-6">
-                  <div className="h-[calc(100vh-320px)]">
-                    <TerminalLogs logs={selectedTarget.results?.logs || []} />
-                  </div>
-                </TabsContent>
+                  <TabsContent value="snapshots" className="mt-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {selectedChild.results?.screenshots?.length ? selectedChild.results.screenshots.map((url, i) => (
+                        <Card key={i} className="overflow-hidden group">
+                          <div className="relative aspect-video bg-black/50">
+                            <Image 
+                              src={url} 
+                              alt={`Snapshot ${i + 1}`} 
+                              fill 
+                              className="object-cover transition-transform group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Button variant="outline" size="sm" className="gap-2 bg-background/50 backdrop-blur" onClick={() => window.open(url, '_blank')}>
+                                <Maximize2 size={14} /> View Fullsize
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      )) : (
+                        <div className="col-span-full py-20 text-center opacity-40">No snapshots captured.</div>
+                      )}
+                    </div>
+                  </TabsContent>
 
-                <TabsContent value="report" className="mt-6">
-                  {selectedTarget.results?.riskAnalysis && (
-                    <RiskAnalysisView data={selectedTarget.results.riskAnalysis} />
-                  )}
-                </TabsContent>
-              </Tabs>
+                  <TabsContent value="logs" className="mt-6">
+                    <div className="h-[calc(100vh-320px)]">
+                      <TerminalLogs logs={selectedChild.results?.logs || []} />
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="report" className="mt-6">
+                    {selectedChild.results?.riskAnalysis && (
+                      <RiskAnalysisView data={selectedChild.results.riskAnalysis} />
+                    )}
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <div className="py-20 text-center text-muted-foreground">Select a child target to view results.</div>
+              )}
             </div>
           </>
         ) : (
@@ -782,9 +806,9 @@ export default function Dashboard() {
                  <Shield size={80} className="text-primary" />
                </div>
              </div>
-             <h2 className="text-3xl font-headline font-bold mb-4 tracking-tight">CypherRecon Workflow Engine</h2>
+             <h2 className="text-3xl font-headline font-bold mb-4 tracking-tight">CypherRecon Enterprise</h2>
              <p className="text-muted-foreground max-w-md mb-8 leading-relaxed">
-               Select a target from the sidebar or add a new one to begin your reconnaissance sequence. 
+               Select a target group or create a new multi-target run to begin analysis.
              </p>
           </div>
         )}

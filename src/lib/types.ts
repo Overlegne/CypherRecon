@@ -90,27 +90,6 @@ export interface TLSData {
   };
 }
 
-export interface Target {
-  id: string;
-  host: string;
-  mode: ReconMode;
-  status: ScanStatus;
-  progress: number;
-  activeModule?: ReconModuleType;
-  createdAt: number;
-  lastRunAt?: number;
-  modules: Record<ReconModuleType, boolean>;
-  credentials?: Credential[];
-  results?: ScanResults;
-}
-
-export interface LogEntry {
-  id: string;
-  timestamp: number;
-  message: string;
-  type: 'info' | 'warn' | 'error' | 'success';
-}
-
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
@@ -122,6 +101,35 @@ export interface ScanResults {
   webSurface?: WebSurfaceData;
   tlsData?: TLSData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
+}
+
+export interface ChildTarget {
+  id: string;
+  host: string;
+  status: ScanStatus;
+  progress: number;
+  activeModule?: ReconModuleType;
+  results?: ScanResults;
+}
+
+export interface TargetGroup {
+  id: string;
+  name: string;
+  mode: ReconMode;
+  status: ScanStatus;
+  progress: number;
+  createdAt: number;
+  lastRunAt?: number;
+  modules: Record<ReconModuleType, boolean>;
+  credentials?: Credential[];
+  childTargets: ChildTarget[];
+}
+
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  message: string;
+  type: 'info' | 'warn' | 'error' | 'success';
 }
 
 export interface AppSettings {
