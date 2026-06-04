@@ -1,9 +1,9 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
 import { Target, ScanStatus, ReconModuleType, ReconMode, LogEntry, OsintFinding } from './types';
 import { analyzeReconDataAndProvideRiskSummary } from '@/ai/flows/analyze-recon-data-and-provide-risk-summary';
+import { PlaceHolderImages } from './placeholder-images';
 
 const DEFAULT_MODULES: Record<ReconModuleType, boolean> = {
   subdomain_enumeration: true,
@@ -119,7 +119,8 @@ export function useScannerStore() {
         osintData: [],
         portScanResults: [],
         techStack: [],
-        apiEndpoints: []
+        apiEndpoints: [],
+        screenshots: []
       };
 
       for (let i = 0; i < modulesToRun.length; i++) {
@@ -152,7 +153,6 @@ export function useScannerStore() {
           mockResults.techStack = ['React 18.2.0', 'Next.js 14.0.0', 'Tailwind CSS', 'Vercel Edge Runtime', 'AWS CloudFront', 'Cloudflare WAF'];
           addLog(`Detected tech stack via Wappalyzer fingerprinting and header analysis.`, 'success');
         } else if (module === 'api_discovery') {
-          // Add a leading slash if missing for consistency
           mockResults.apiEndpoints = ['/api/v1/users', '/api/v1/login', '/api/v2/debug/config', '/v2/swagger.json', '/graphiql', '/.well-known/security.txt', '/robots.txt', '/sitemap.xml'];
           addLog(`Discovered ${mockResults.apiEndpoints.length} API endpoints via directory busting and crawler.`, 'success');
         } else if (module === 'osint') {
@@ -183,9 +183,13 @@ export function useScannerStore() {
             }
           ];
           addLog(`OSINT: discovered potential data leaks and personnel mapping.`, 'warn');
+        } else if (module === 'screenshotting') {
+          addLog(`Launching headless browser (Chromium) to capture visual snapshots of exposed services...`, 'info');
+          mockResults.screenshots = PlaceHolderImages.map(img => img.imageUrl);
+          addLog(`Captured ${mockResults.screenshots.length} visual snapshots of web services.`, 'success');
         }
 
-        updateTarget(targetId, { results: { ...target.results, ...mockResults, logs: [] } }); // logs handled separately
+        updateTarget(targetId, { results: { ...target.results, ...mockResults, logs: [] } }); 
       }
 
       // AI Analysis

@@ -1,3 +1,28 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "landing-page",
+      "description": "Main landing page of the target application showing the primary UI.",
+      "imageUrl": "https://picsum.photos/seed/recon1/1200/800",
+      "imageHint": "website screenshot"
+    },
+    {
+      "id": "admin-panel",
+      "description": "Internal administration dashboard discovered on a non-standard port.",
+      "imageUrl": "https://picsum.photos/seed/recon2/1200/800",
+      "imageHint": "dashboard screenshot"
+    },
+    {
+      "id": "login-screen",
+      "description": "Exposed login portal for the staging environment.",
+      "imageUrl": "https://picsum.photos/seed/recon3/1200/800",
+      "imageHint": "login page"
+    },
+    {
+      "id": "api-docs",
+      "description": "Publicly accessible Swagger/OpenAPI documentation page.",
+      "imageUrl": "https://picsum.photos/seed/recon4/1200/800",
+      "imageHint": "documentation screenshot"
+    }
+  ]
 }

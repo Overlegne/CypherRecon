@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -28,7 +27,9 @@ import {
   Code,
   Users,
   AlertTriangle,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Camera,
+  Maximize2
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -54,6 +55,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { SettingsDialog } from './SettingsDialog';
 import { Switch } from './ui/switch';
+import Image from 'next/image';
 
 const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   subdomain_enumeration: true,
@@ -62,7 +64,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   port_scanning: true,
   tech_stack: true,
   api_discovery: true,
-  screenshotting: false,
+  screenshotting: true,
 };
 
 export default function Dashboard() {
@@ -313,6 +315,7 @@ export default function Dashboard() {
                   <TabsTrigger value="network" className="gap-2" disabled={!selectedTarget.results?.portScanResults}><Network size={14} /> Network</TabsTrigger>
                   <TabsTrigger value="discovery" className="gap-2" disabled={!selectedTarget.results?.subdomains}><Search size={14} /> Discovery</TabsTrigger>
                   <TabsTrigger value="surface" className="gap-2" disabled={!selectedTarget.results?.techStack}><Cpu size={14} /> Web Surface</TabsTrigger>
+                  <TabsTrigger value="snapshots" className="gap-2" disabled={!selectedTarget.results?.screenshots}><Camera size={14} /> Snapshots</TabsTrigger>
                   <TabsTrigger value="modules" className="gap-2"><Settings2 size={14} /> Modules</TabsTrigger>
                   <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
                   <TabsTrigger value="report" className="gap-2" disabled={!selectedTarget.results?.riskAnalysis}><FileText size={14} /> Risk Analysis</TabsTrigger>
@@ -545,6 +548,44 @@ export default function Dashboard() {
                         </div>
                       </CardContent>
                     </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="snapshots" className="mt-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {selectedTarget.results?.screenshots?.map((url, i) => (
+                      <Card key={i} className="overflow-hidden group">
+                        <div className="relative aspect-video bg-black/50">
+                          <Image 
+                            src={url} 
+                            alt={`Visual Snapshot ${i + 1}`} 
+                            fill 
+                            className="object-cover transition-transform group-hover:scale-105"
+                            data-ai-hint="website screenshot"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Button variant="outline" size="sm" className="gap-2 bg-background/50 backdrop-blur" onClick={() => window.open(url, '_blank')}>
+                              <Maximize2 size={14} /> View Fullsize
+                            </Button>
+                          </div>
+                          <Badge className="absolute top-2 left-2 bg-primary/80 backdrop-blur">
+                            #{i + 1} Captured
+                          </Badge>
+                        </div>
+                        <CardContent className="p-3 bg-card/80">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">Snapshot Hash: {Math.random().toString(16).slice(2, 10)}</span>
+                              <span className="text-[10px] text-primary font-bold">SUCCESS</span>
+                           </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {(!selectedTarget.results?.screenshots || selectedTarget.results.screenshots.length === 0) && (
+                      <div className="col-span-full flex flex-col items-center justify-center py-20 text-center opacity-40">
+                        <Camera size={48} className="mb-4" />
+                        <p>No visual snapshots captured during this sequence.</p>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 

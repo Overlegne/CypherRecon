@@ -47,6 +47,7 @@ export interface ScanResults {
   portScanResults?: { port: number; service: string; version?: string; state: string }[];
   techStack?: string[];
   apiEndpoints?: string[];
+  screenshots?: string[];
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 
