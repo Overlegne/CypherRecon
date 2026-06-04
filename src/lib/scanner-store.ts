@@ -131,7 +131,8 @@ export function useScannerStore() {
             delete pollingRefs.current[targetId];
           }
           
-          if (updated.results && !updated.results.riskAnalysis) {
+          // Only run AI analysis if we have real results and haven't analyzed yet
+          if (updated.results && !updated.results.riskAnalysis && (updated.results.portScanResults?.length > 0 || updated.results.subdomains?.length > 0)) {
             try {
               const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
                 target: updated.host,
