@@ -1,42 +1,75 @@
+
 # CypherRecon
 
 CypherRecon is a modern, AI-powered ethical hacking reconnaissance dashboard. It provides a visual interface for managing target sequences, monitoring real-time scan telemetry, and performing automated risk assessments using Google Gemini.
 
-## Features
+## 🚀 Production Deployment Strategy
 
-- **Dynamic Pipeline Configuration**: Choose which modules (Subdomains, OSINT, Port Scanning, etc.) to run for every target.
-- **Deep Network Discovery**: Full port scanning simulations and service fingerprinting.
-- **Visual Attack Surface**: Automated screenshotting and visual snapshot gallery.
-- **AI-Powered Risk Analysis**: Integrated Genkit flows that analyze scan results to provide risk scores and vulnerability summaries.
-- **External Backend Support**: Fully decoupled architecture ready to connect to your local Python/Go scanner service.
-- **Persistent Settings**: Local storage for API keys (Shodan, VirusTotal, etc.) and global scanning preferences.
+To run CypherRecon in production, you need two components:
+1. **Frontend**: This Next.js application (can be hosted on Firebase, Vercel, or lokaal).
+2. **Scanner Service (Python)**: A local service that performs the actual network scans (Nmap, DNS, etc.).
 
-## Getting Started
+### 1. Start the Python Backend
+Create a file named `scanner_backend.py` and install dependencies:
+```bash
+pip install fastapi uvicorn
+```
 
-### 1. Frontend Setup
-This is a Next.js application. Ensure you have Node.js installed.
-The dashboard will run on `http://localhost:9002` by default.
+**Minimal Backend Boilerplate:**
+```python
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uuid, time
 
-### 2. Local Backend Integration
-CypherRecon is designed to be a thin client. You must provide a local backend (e.g., using FastAPI or Flask) at the URL configured in the **Settings** menu (default: `http://localhost:5000`).
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-#### Expected API Endpoints:
-- `GET /targets`: Returns an array of `Target` objects.
-- `POST /targets`: Creates a new target entry.
-- `DELETE /targets/:id`: Removes a target.
-- `GET /targets/:id`: Returns status, progress, and results for a target.
-- `POST /targets/:id/scan`: Initiates the scanning process on your local machine.
-- `POST /targets/:id/risk`: Stores the AI-generated risk assessment.
+db = {"targets": []}
 
-### 3. Environment Variables
-To enable the AI risk assessment, ensure you have a `GEMINI_API_KEY` in your `.env` file for Genkit.
+class Target(BaseModel):
+    host: str
+    mode: str
+    modules: dict
+
+@app.get("/health")
+def health(): return {"status": "ok"}
+
+@app.get("/targets")
+def get_targets(): return db["targets"]
+
+@app.post("/targets")
+def add_target(target: Target):
+    new_t = {
+        "id": str(uuid.uuid4()), "host": target.host, "mode": target.mode,
+        "status": "idle", "progress": 0, "createdAt": int(time.time()*1000),
+        "modules": target.modules, "results": {"logs": []}
+    }
+    db["targets"].append(new_t)
+    return new_t
+
+@app.post("/targets/{id}/scan")
+def run_scan(id: str, background_tasks: BackgroundTasks):
+    # Hier implementeer je je echte Nmap/Subdomain scripts
+    background_tasks.add_task(dummy_scan_logic, id)
+    return {"status": "started"}
+
+async def dummy_scan_logic(id: str):
+    # Zoek target in db en update resultaten real-time
+    pass
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5000)
+```
+
+### 2. Configure Frontend
+1. Open CypherRecon.
+2. Ga naar **System Settings**.
+3. Stel de **Local Backend API URL** in op `http://localhost:5000`.
+4. De status indicator in de sidebar wordt groen zodra de Python service draait.
 
 ## Technical Stack
-- **Framework**: Next.js 15 (App Router)
-- **Styling**: Tailwind CSS & ShadCN UI
-- **AI Logic**: Genkit v1.x (Google Generative AI)
-- **Icons**: Lucide React
-- **Charts**: Recharts
-
-## License
-Ethical Use Only. Built for educational and professional security research purposes.
+- **Frontend**: Next.js 15, Tailwind CSS, ShadCN UI
+- **AI Logic**: Genkit v1.x (Gemini 2.5 Flash)
+- **Scanning**: External local service (Python/Go/Rust)

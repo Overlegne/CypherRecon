@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -29,7 +30,9 @@ import {
   AlertTriangle,
   Link as LinkIcon,
   Camera,
-  Maximize2
+  Maximize2,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -75,7 +78,8 @@ export default function Dashboard() {
     addTarget, 
     deleteTarget, 
     toggleModule, 
-    runScan 
+    runScan,
+    isBackendConnected
   } = useScannerStore();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -125,12 +129,25 @@ export default function Dashboard() {
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Sidebar */}
       <aside className="w-80 border-r border-border flex flex-col bg-card/30 backdrop-blur-xl">
-        <div className="p-6 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-primary shadow-lg shadow-primary/20">
-              <Shield className="text-white" size={20} />
+        <div className="p-6 border-b border-border flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-primary shadow-lg shadow-primary/20">
+                <Shield className="text-white" size={20} />
+              </div>
+              <h1 className="font-headline font-bold text-xl tracking-tight">Cypher<span className="text-primary">Recon</span></h1>
             </div>
-            <h1 className="font-headline font-bold text-xl tracking-tight">Cypher<span className="text-primary">Recon</span></h1>
+          </div>
+          <div className="flex items-center gap-2">
+            {isBackendConnected ? (
+              <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-400 border-green-500/20 gap-1.5">
+                <Wifi size={10} /> ENGINE ONLINE
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20 gap-1.5">
+                <WifiOff size={10} /> ENGINE OFFLINE
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -262,7 +279,6 @@ export default function Dashboard() {
           </div>
         </ScrollArea>
 
-        {/* Sidebar Footer with Settings */}
         <div className="p-4 border-t border-border mt-auto">
           <Button 
             variant="ghost" 
@@ -275,11 +291,9 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
         {selectedTarget ? (
           <>
-            {/* Header */}
             <header className="p-6 border-b border-border bg-card/10 backdrop-blur-lg flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-1">
@@ -294,8 +308,8 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <Button 
                   onClick={() => runScan(selectedTarget.id)} 
-                  disabled={selectedTarget.status === 'running'}
-                  className="gap-2 bg-accent text-white hover:bg-accent/90"
+                  disabled={selectedTarget.status === 'running' || !isBackendConnected}
+                  className={`gap-2 ${isBackendConnected ? 'bg-accent text-white hover:bg-accent/90' : 'bg-muted text-muted-foreground'}`}
                 >
                   {selectedTarget.status === 'running' ? (
                     <Loader2 size={18} className="animate-spin" />
@@ -307,7 +321,6 @@ export default function Dashboard() {
               </div>
             </header>
 
-            {/* Content Area */}
             <div className="flex-1 overflow-auto p-6 space-y-6">
               <Tabs defaultValue="overview" className="w-full">
                 <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto">
@@ -329,8 +342,18 @@ export default function Dashboard() {
                       </div>
                       <div className="max-w-md">
                         <h3 className="text-xl font-bold mb-2">Ready to initiate reconnaissance</h3>
+                        {!isBackendConnected && (
+                          <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
+                            <WifiOff size={14} /> Backend scanner service is currently offline.
+                          </div>
+                        )}
                         <p className="text-muted-foreground mb-6">Configure your active modules and start the scan to map the attack surface and analyze risks.</p>
-                        <Button onClick={() => runScan(selectedTarget.id)} size="lg" className="gap-2">
+                        <Button 
+                          onClick={() => runScan(selectedTarget.id)} 
+                          size="lg" 
+                          className="gap-2"
+                          disabled={!isBackendConnected}
+                        >
                           Execute Workflow <ArrowRight size={18} />
                         </Button>
                       </div>
@@ -343,38 +366,19 @@ export default function Dashboard() {
                         <div className="p-6 rounded-xl border border-border bg-card/50">
                           <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Discovery Findings</h4>
                           <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
+                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
                               <span className="block text-2xl font-bold font-code">{selectedTarget.results?.subdomains?.length || 0}</span>
                               <span className="text-xs text-muted-foreground uppercase">Subdomains</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
+                            <div className="p-4 rounded-lg bg-secondary/30 border border-border">
                               <span className="block text-2xl font-bold font-code">{selectedTarget.results?.portScanResults?.length || 0}</span>
                               <span className="text-xs text-muted-foreground uppercase">Active Ports</span>
                             </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
-                              <span className="block text-2xl font-bold font-code">{selectedTarget.results?.apiEndpoints?.length || 0}</span>
-                              <span className="text-xs text-muted-foreground uppercase">API Paths</span>
-                            </div>
-                            <div className="p-4 rounded-lg bg-secondary/30 border border-border hover:border-primary/50 transition-colors cursor-pointer">
-                              <span className="block text-2xl font-bold font-code">{selectedTarget.results?.techStack?.length || 0}</span>
-                              <span className="text-xs text-muted-foreground uppercase">Tech Stack</span>
-                            </div>
                           </div>
                         </div>
-                        
                         <TerminalLogs logs={selectedTarget.results?.logs || []} />
                       </div>
-
                       <div className="space-y-6">
-                        <div className="p-6 rounded-xl border border-border bg-card/50">
-                          <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Quick Tech Profile</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {selectedTarget.results?.techStack?.map((tech, i) => (
-                              <Badge key={i} variant="secondary" className="px-3 py-1 font-medium">{tech}</Badge>
-                            )) || <p className="text-xs text-muted-foreground italic">No data yet...</p>}
-                          </div>
-                        </div>
-
                         {selectedTarget.results?.riskAnalysis && (
                            <div className="p-6 rounded-xl border border-primary/30 bg-primary/5">
                              <div className="flex items-center justify-between mb-4">
@@ -382,7 +386,7 @@ export default function Dashboard() {
                                <span className="text-4xl font-bold font-code text-primary">{selectedTarget.results.riskAnalysis.riskScore}</span>
                              </div>
                              <Progress value={selectedTarget.results.riskAnalysis.riskScore} className="h-2 mb-4" />
-                             <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                             <p className="text-xs text-muted-foreground leading-relaxed">
                                {selectedTarget.results.riskAnalysis.riskSummary}
                              </p>
                            </div>
@@ -481,21 +485,8 @@ export default function Dashboard() {
                                   </Button>
                                 )}
                               </div>
-                              {finding.url && (
-                                <div className="pl-7 mt-1">
-                                  <button 
-                                    onClick={() => window.open(finding.url, '_blank')}
-                                    className="text-[10px] text-primary hover:underline flex items-center gap-1 font-code truncate max-w-full"
-                                  >
-                                    {finding.url}
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           ))}
-                          {(!selectedTarget.results?.osintData || selectedTarget.results.osintData.length === 0) && (
-                            <p className="text-sm text-muted-foreground italic">No public leaks discovered in current sequence.</p>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -529,22 +520,16 @@ export default function Dashboard() {
                           {selectedTarget.results?.apiEndpoints?.map((endpoint, i) => (
                             <div key={i} className="group flex items-center justify-between p-2 rounded bg-card border border-border hover:border-primary/40 transition-colors">
                               <code className="text-xs text-primary">{endpoint}</code>
-                              <div className="flex items-center gap-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleOpenEndpoint(selectedTarget.host, endpoint)}
-                                >
-                                  <ExternalLink size={12} />
-                                </Button>
-                                <Badge variant="outline" className="text-[9px] uppercase">API</Badge>
-                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6"
+                                onClick={() => handleOpenEndpoint(selectedTarget.host, endpoint)}
+                              >
+                                <ExternalLink size={12} />
+                              </Button>
                             </div>
                           ))}
-                          {(!selectedTarget.results?.apiEndpoints || selectedTarget.results.apiEndpoints.length === 0) && (
-                            <p className="text-sm text-muted-foreground italic">No API endpoints mapped.</p>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -561,42 +546,20 @@ export default function Dashboard() {
                             alt={`Visual Snapshot ${i + 1}`} 
                             fill 
                             className="object-cover transition-transform group-hover:scale-105"
-                            data-ai-hint="website screenshot"
                           />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Button variant="outline" size="sm" className="gap-2 bg-background/50 backdrop-blur" onClick={() => window.open(url, '_blank')}>
                               <Maximize2 size={14} /> View Fullsize
                             </Button>
                           </div>
-                          <Badge className="absolute top-2 left-2 bg-primary/80 backdrop-blur">
-                            #{i + 1} Captured
-                          </Badge>
                         </div>
-                        <CardContent className="p-3 bg-card/80">
-                           <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-code text-muted-foreground uppercase tracking-widest">Snapshot Hash: {Math.random().toString(16).slice(2, 10)}</span>
-                              <span className="text-[10px] text-primary font-bold">SUCCESS</span>
-                           </div>
-                        </CardContent>
                       </Card>
                     ))}
-                    {(!selectedTarget.results?.screenshots || selectedTarget.results.screenshots.length === 0) && (
-                      <div className="col-span-full flex flex-col items-center justify-center py-20 text-center opacity-40">
-                        <Camera size={48} className="mb-4" />
-                        <p>No visual snapshots captured during this sequence.</p>
-                      </div>
-                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="modules" className="mt-6">
-                  <div className="max-w-4xl space-y-6">
-                    <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm text-primary flex items-start gap-3">
-                      <Settings2 className="shrink-0 mt-0.5" size={18} />
-                      <p>Adjust these settings before initiating a scan. Deep port scans (-p-) with version detection (-sV) are enabled by default for the Port Scanning module.</p>
-                    </div>
-                    <ModuleConfig target={selectedTarget} onToggle={(mod) => toggleModule(selectedTarget.id, mod)} />
-                  </div>
+                  <ModuleConfig target={selectedTarget} onToggle={(mod) => toggleModule(selectedTarget.id, mod)} />
                 </TabsContent>
 
                 <TabsContent value="logs" className="mt-6">
@@ -606,13 +569,8 @@ export default function Dashboard() {
                 </TabsContent>
 
                 <TabsContent value="report" className="mt-6">
-                  {selectedTarget.results?.riskAnalysis ? (
+                  {selectedTarget.results?.riskAnalysis && (
                     <RiskAnalysisView data={selectedTarget.results.riskAnalysis} />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
-                      <FileText size={48} className="mb-4" />
-                      <p>Run a full scan to generate risk analysis.</p>
-                    </div>
                   )}
                 </TabsContent>
               </Tabs>
@@ -629,30 +587,11 @@ export default function Dashboard() {
              <h2 className="text-3xl font-headline font-bold mb-4 tracking-tight">CypherRecon Workflow Engine</h2>
              <p className="text-muted-foreground max-w-md mb-8 leading-relaxed">
                Select a target from the sidebar or add a new one to begin your reconnaissance sequence. 
-               Automated discovery and AI-powered risk assessment await.
              </p>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-2xl">
-               <div className="p-4 rounded-xl border border-border bg-secondary/20">
-                 <Search size={24} className="text-primary mb-3 mx-auto" />
-                 <h4 className="font-semibold text-sm mb-1">Deep Discovery</h4>
-                 <p className="text-[11px] text-muted-foreground">Map subdomains, API paths, and tech stacks automatically.</p>
-               </div>
-               <div className="p-4 rounded-xl border border-border bg-secondary/20">
-                 <Activity size={24} className="text-accent mb-3 mx-auto" />
-                 <h4 className="font-semibold text-sm mb-1">Live Telemetry</h4>
-                 <p className="text-[11px] text-muted-foreground">Monitor real-time logs and port scanning progress.</p>
-               </div>
-               <div className="p-4 rounded-xl border border-border bg-secondary/20">
-                 <FileText size={24} className="text-green-500 mb-3 mx-auto" />
-                 <h4 className="font-semibold text-sm mb-1">AI Risk Assessment</h4>
-                 <p className="text-[11px] text-muted-foreground">Get instant risk scores and vulnerability summaries.</p>
-               </div>
-             </div>
           </div>
         )}
       </main>
 
-      {/* Global Settings Dialog */}
       <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </div>
   );

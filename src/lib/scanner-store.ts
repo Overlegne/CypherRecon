@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -9,10 +10,19 @@ import { toast } from '@/hooks/use-toast';
 export function useScannerStore() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
   const { settings } = useSettingsStore();
   const pollingRefs = useRef<Record<string, NodeJS.Timeout>>({});
 
-  // Fetch targets from real backend on mount
+  const checkHealth = useCallback(async () => {
+    try {
+      const res = await fetch(`${settings.apiUrl}/health`, { signal: AbortSignal.timeout(2000) });
+      setIsBackendConnected(res.ok);
+    } catch (e) {
+      setIsBackendConnected(false);
+    }
+  }, [settings.apiUrl]);
+
   const fetchTargets = useCallback(async () => {
     try {
       const response = await fetch(`${settings.apiUrl}/targets`);
@@ -21,13 +31,16 @@ export function useScannerStore() {
         setTargets(data);
       }
     } catch (e) {
-      console.error("Backend connection failed", e);
+      console.error("Backend fetch failed", e);
     }
   }, [settings.apiUrl]);
 
   useEffect(() => {
+    checkHealth();
     fetchTargets();
-  }, [fetchTargets]);
+    const interval = setInterval(checkHealth, 5000);
+    return () => clearInterval(interval);
+  }, [checkHealth, fetchTargets]);
 
   const addTarget = useCallback(async (host: string, mode: ReconMode, modules: Record<ReconModuleType, boolean>) => {
     try {
@@ -41,10 +54,10 @@ export function useScannerStore() {
         const newTarget = await response.json();
         setTargets(prev => [newTarget, ...prev]);
         setSelectedTargetId(newTarget.id);
-        toast({ title: "Target Created", description: `Added ${host} to scanning pool.` });
+        toast({ title: "Target Created", description: `Added ${host} to pool.` });
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to add target to backend." });
+      toast({ variant: "destructive", title: "Connection Error", description: "Backend is unreachable." });
     }
   }, [settings.apiUrl]);
 
@@ -59,7 +72,6 @@ export function useScannerStore() {
   }, [settings.apiUrl, selectedTargetId]);
 
   const toggleModule = useCallback(async (targetId: string, module: ReconModuleType) => {
-    // Optimistic UI update
     setTargets(prev => prev.map(t => 
       t.id === targetId 
         ? { ...t, modules: { ...t.modules, [module]: !t.modules[module] } }
@@ -73,7 +85,7 @@ export function useScannerStore() {
         body: JSON.stringify({ module })
       });
     } catch (e) {
-      fetchTargets(); // Revert on failure
+      fetchTargets();
     }
   }, [settings.apiUrl, fetchTargets]);
 
@@ -82,21 +94,18 @@ export function useScannerStore() {
       const response = await fetch(`${settings.apiUrl}/targets/${targetId}`);
       if (response.ok) {
         const updated = await response.json();
-        
         setTargets(prev => prev.map(t => t.id === targetId ? updated : t));
 
         if (updated.status === 'completed') {
           clearInterval(pollingRefs.current[targetId]);
           delete pollingRefs.current[targetId];
           
-          // Trigger AI Analysis on real data
           if (updated.results && !updated.results.riskAnalysis) {
             const riskAnalysis = await analyzeReconDataAndProvideRiskSummary({
               target: updated.host,
               ...updated.results
             });
             
-            // Send AI results back to backend to persist
             fetch(`${settings.apiUrl}/targets/${targetId}/risk`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -109,11 +118,16 @@ export function useScannerStore() {
         }
       }
     } catch (e) {
-      console.error("Polling error", e);
+      setIsBackendConnected(false);
     }
   }, [settings.apiUrl, fetchTargets]);
 
   const runScan = useCallback(async (targetId: string) => {
+    if (!isBackendConnected) {
+      toast({ variant: "destructive", title: "Backend Offline", description: "Please start your local scanner service." });
+      return;
+    }
+
     try {
       const response = await fetch(`${settings.apiUrl}/targets/${targetId}/scan`, {
         method: 'POST',
@@ -123,23 +137,14 @@ export function useScannerStore() {
 
       if (response.ok) {
         setTargets(prev => prev.map(t => t.id === targetId ? { ...t, status: 'running', progress: 0 } : t));
-        
-        // Start real-time status polling
         if (!pollingRefs.current[targetId]) {
           pollingRefs.current[targetId] = setInterval(() => pollStatus(targetId), 2000);
         }
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Scan Failed", description: "Could not initiate backend scan process." });
+      toast({ variant: "destructive", title: "Scan Failed", description: "Backend connection lost." });
     }
-  }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus]);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(pollingRefs.current).forEach(clearInterval);
-    };
-  }, []);
+  }, [settings.apiUrl, settings.scanDefaults, settings.apiKeys, pollStatus, isBackendConnected]);
 
   return {
     targets,
@@ -149,6 +154,7 @@ export function useScannerStore() {
     deleteTarget,
     toggleModule,
     runScan,
+    isBackendConnected,
     refresh: fetchTargets
   };
 }
