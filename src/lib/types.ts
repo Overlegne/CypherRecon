@@ -42,3 +42,19 @@ export interface ScanResults {
   apiEndpoints?: string[];
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
+
+export interface AppSettings {
+  apiKeys: {
+    shodan?: string;
+    virustotal?: string;
+    censys?: string;
+    hunterio?: string;
+    securitytrails?: string;
+  };
+  scanDefaults: {
+    intensity: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
+    threads: number;
+    followRedirects: boolean;
+    userAgent: string;
+  };
+}

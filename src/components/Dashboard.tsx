@@ -20,7 +20,8 @@ import {
   Activity,
   Network,
   Cpu,
-  Unplug
+  Unplug,
+  Settings
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -44,6 +45,7 @@ import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { SettingsDialog } from './SettingsDialog';
 
 export default function Dashboard() {
   const { 
@@ -57,6 +59,7 @@ export default function Dashboard() {
   } = useScannerStore();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [newHost, setNewHost] = useState('');
   const [newMode, setNewMode] = useState<ReconMode>('blackbox');
 
@@ -186,6 +189,18 @@ export default function Dashboard() {
             ))}
           </div>
         </ScrollArea>
+
+        {/* Sidebar Footer with Settings */}
+        <div className="p-4 border-t border-border mt-auto">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            <Settings size={18} />
+            System Settings
+          </Button>
+        </div>
       </aside>
 
       {/* Main Content */}
@@ -480,6 +495,9 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* Global Settings Dialog */}
+      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </div>
   );
 }
