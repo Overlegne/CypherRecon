@@ -37,7 +37,8 @@ import {
   KeyRound,
   MoreVertical,
   ChevronDown,
-  Link as LinkIcon
+  Link as LinkIcon,
+  ShieldEllipsis
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -59,6 +60,7 @@ import { RiskAnalysisView } from './RiskAnalysisView';
 import { WebSurfaceView } from './WebSurfaceView';
 import { TLSAnalysisView } from './TLSAnalysisView';
 import { URLHarvestingView } from './URLHarvestingView';
+import { CORSAuditView } from './CORSAuditView';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { formatDistanceToNow } from 'date-fns';
@@ -82,6 +84,7 @@ const INITIAL_MODULES: Record<ReconModuleType, boolean> = {
   web_surface_scan: true,
   tls_analysis: true,
   url_harvesting: true,
+  cors_audit: true,
 };
 
 export default function Dashboard() {
@@ -482,6 +485,7 @@ export default function Dashboard() {
                     <TabsTrigger value="discovery" className="gap-2"><Search size={14} /> Discovery</TabsTrigger>
                     <TabsTrigger value="harvesting" className="gap-2"><LinkIcon size={14} /> URL Harvesting</TabsTrigger>
                     <TabsTrigger value="surface" className="gap-2"><Layers size={14} /> Web Surface</TabsTrigger>
+                    <TabsTrigger value="cors" className="gap-2"><ShieldEllipsis size={14} /> CORS Audit</TabsTrigger>
                     <TabsTrigger value="tls" className="gap-2"><KeyRound size={14} /> SSL/TLS</TabsTrigger>
                     <TabsTrigger value="snapshots" className="gap-2"><Camera size={14} /> Snapshots</TabsTrigger>
                     <TabsTrigger value="logs" className="gap-2"><Terminal size={14} /> Live Logs</TabsTrigger>
@@ -562,6 +566,12 @@ export default function Dashboard() {
                     {selectedChild.results?.webSurface ? (
                       <WebSurfaceView data={selectedChild.results.webSurface} />
                     ) : <div className="py-20 text-center opacity-40">Awaiting Web Surface scan...</div>}
+                  </TabsContent>
+
+                  <TabsContent value="cors" className="mt-6">
+                    {selectedChild.results?.cors_audit ? (
+                      <CORSAuditView data={selectedChild.results.cors_audit} />
+                    ) : <div className="py-20 text-center opacity-40">Awaiting CORS Audit...</div>}
                   </TabsContent>
 
                   <TabsContent value="tls" className="mt-6">

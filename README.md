@@ -82,7 +82,7 @@ def add_group(g: GroupCreate):
             "host": host,
             "status": "idle",
             "progress": 0,
-            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None}
+            "results": {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None}
         })
     
     group = {
@@ -109,7 +109,7 @@ def run_group_scan(id: str, background_tasks: BackgroundTasks):
         for child in group["childTargets"]:
             child["status"] = "running"
             child["progress"] = 0
-            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None}
+            child["results"] = {"logs": [], "subdomains": [], "portScanResults": [], "osintData": [], "techStack": [], "apiEndpoints": [], "screenshots": [], "webSurface": None, "tlsData": None, "urlHarvesting": None, "cors_audit": None}
         
         background_tasks.add_task(execute_group_workflow, id)
         return {"status": "started"}
@@ -284,7 +284,7 @@ async def execute_single_target(group, child, group_id):
                     except: pass
             child["results"]["webSurface"] = results
             log("Web surface analysis complete.", "success")
-            child["progress"] = 50
+            child["progress"] = 45
 
         # Phase 4: SSL/TLS
         if modules.get("tls_analysis") and not is_stopped():
@@ -295,9 +295,10 @@ async def execute_single_target(group, child, group_id):
             tls_results["summary"]["supported_versions"] = 1
             child["results"]["tlsData"] = tls_results
             log("TLS analysis complete.", "success")
-            child["progress"] = 65
+            child["progress"] = 60
 
         # Phase 5: URL Harvesting
+        harvested_urls = []
         if modules.get("url_harvesting") and not is_stopped():
             child["activeModule"] = "url_harvesting"
             log("Phase 5: Harvesting URLs...")
@@ -322,14 +323,10 @@ async def execute_single_target(group, child, group_id):
                     if any(x in path for x in ['backup', 'config', 'setup', 'internal', 'staging', 'dev']): interesting = True
                     
                     harvested.append({
-                        "url": full_url,
-                        "source": source,
-                        "type": utype,
-                        "interesting": interesting
+                        "url": full_url, "source": source, "type": utype, "interesting": interesting
                     })
 
             async with httpx.AsyncClient(headers=headers, verify=False, timeout=5, follow_redirects=True) as client:
-                # 1. robots.txt
                 try:
                     r = await client.get(f"http://{host}/robots.txt")
                     if r.status_code == 200:
@@ -338,8 +335,6 @@ async def execute_single_target(group, child, group_id):
                                 parts = line.split(':')
                                 if len(parts) > 1: await add_url(parts[1].strip(), 'robots')
                 except: pass
-
-                # 2. Main Page Crawl
                 try:
                     r = await client.get(f"http://{host}/")
                     if r.status_code == 200:
@@ -348,22 +343,83 @@ async def execute_single_target(group, child, group_id):
                         for s in soup.find_all(['script', 'img', 'link'], src=True): await add_url(s['src'], 'html')
                 except: pass
 
+            harvested_urls = harvested
             child["results"]["urlHarvesting"] = {
                 "urls": harvested,
                 "summary": {
-                    "found": len(harvested),
-                    "unique": len(seen_urls),
-                    "interesting": len([u for u in harvested if u['interesting']]),
-                    "api_endpoints": len([u for u in harvested if u['type'] == 'api'])
+                    "found": len(harvested), "unique": len(seen_urls), "interesting": len([u for u in harvested if u['interesting']]), "api_endpoints": len([u for u in harvested if u['type'] == 'api'])
                 }
             }
             log(f"URL Harvesting complete. Found {len(harvested)} links.", "success")
-            child["progress"] = 85
+            child["progress"] = 75
 
-        # Phase 6: Screenshot
+        # Phase 6: CORS Audit
+        if modules.get("cors_audit") and not is_stopped():
+            child["activeModule"] = "cors_audit"
+            log("Phase 6: Auditing CORS configurations...")
+            cors_results = {"findings": [], "summary": {"tested_endpoints": 0, "permissive": 0, "high_risk": 0, "safe": 0}}
+            test_origins = [f"https://evil-{uuid.uuid4().hex[:8]}.com", "null", f"https://sub.{host}"]
+            
+            # Select unique endpoints to test (max 10)
+            urls_to_test = [f"http://{host}", f"https://{host}"]
+            if harvested_urls:
+                api_urls = [u['url'] for u in harvested_urls if u['type'] == 'api'][:5]
+                urls_to_test.extend(api_urls)
+            
+            urls_to_test = list(set(urls_to_test))
+            headers, _ = build_http_context()
+            
+            async with httpx.AsyncClient(headers=headers, verify=False, timeout=5) as client:
+                for url in urls_to_test:
+                    cors_results["summary"]["tested_endpoints"] += 1
+                    for origin in test_origins:
+                        try:
+                            test_headers = headers.copy()
+                            test_headers["Origin"] = origin
+                            resp = await client.options(url, headers=test_headers)
+                            
+                            acao = resp.headers.get("Access-Control-Allow-Origin")
+                            acac = resp.headers.get("Access-Control-Allow-Credentials")
+                            
+                            if not acao:
+                                cors_results["summary"]["safe"] += 1
+                                continue
+
+                            status = "safe"
+                            issue = "Restricted origin"
+                            severity = "none"
+                            
+                            if acao == "*":
+                                status = "permissive"
+                                issue = "Wildcard origin allowed"
+                                severity = "medium"
+                                if acac == "true":
+                                    status = "high"
+                                    issue = "Wildcard origin with credentials allowed"
+                                    severity = "high"
+                            elif acao == origin:
+                                status = "high"
+                                issue = "Origin reflection (ACAO mirrors Origin header)"
+                                severity = "high"
+                            
+                            cors_results["findings"].append({
+                                "url": url, "origin_tested": origin, "acao": acao, "acac": acac,
+                                "status": status, "issue": issue, "severity": severity
+                            })
+                            
+                            if status == "permissive": cors_results["summary"]["permissive"] += 1
+                            elif status == "high": cors_results["summary"]["high_risk"] += 1
+                            else: cors_results["summary"]["safe"] += 1
+                        except: pass
+            
+            child["results"]["cors_audit"] = cors_results
+            log("CORS audit complete.", "success")
+            child["progress"] = 90
+
+        # Phase 7: Screenshot
         if modules.get("screenshotting") and not is_stopped():
             child["activeModule"] = "screenshotting"
-            log("Phase 6: Capturing Snapshot...")
+            log("Phase 7: Capturing Snapshot...")
             headers, cookies = build_http_context()
             async with async_playwright() as p:
                 try:

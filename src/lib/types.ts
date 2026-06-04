@@ -36,7 +36,8 @@ export type ReconModuleType =
   | 'screenshotting'
   | 'web_surface_scan'
   | 'tls_analysis'
-  | 'url_harvesting';
+  | 'url_harvesting'
+  | 'cors_audit';
 
 export interface OsintFinding {
   label: string;
@@ -109,6 +110,26 @@ export interface URLHarvestingData {
   };
 }
 
+export interface CORSFinding {
+  url: string;
+  origin_tested: string;
+  acao: string | null;
+  acac: string | null;
+  status: 'safe' | 'permissive' | 'high';
+  issue: string;
+  severity: 'none' | 'low' | 'medium' | 'high';
+}
+
+export interface CORSAuditData {
+  findings: CORSFinding[];
+  summary: {
+    tested_endpoints: number;
+    permissive: number;
+    high_risk: number;
+    safe: number;
+  };
+}
+
 export interface ScanResults {
   logs: LogEntry[];
   subdomains?: string[];
@@ -120,6 +141,7 @@ export interface ScanResults {
   webSurface?: WebSurfaceData;
   tlsData?: TLSData;
   urlHarvesting?: URLHarvestingData;
+  cors_audit?: CORSAuditData;
   riskAnalysis?: AnalyzeReconDataAndProvideRiskSummaryOutput;
 }
 

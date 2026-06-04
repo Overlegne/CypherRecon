@@ -22,6 +22,7 @@ const AnalyzeReconDataAndProvideRiskSummaryInputSchema = z.object({
     })),
     summary: z.any()
   }).nullable().optional(),
+  cors_audit: z.any().nullable().optional(),
   techStack: z.array(z.string()).nullable().optional(),
   apiEndpoints: z.array(z.string()).nullable().optional(),
   screenshots: z.array(z.string()).nullable().optional(),
@@ -69,8 +70,9 @@ Harvested URLs:
 
 {{#if webSurface}}Web Surface: {{webSurface.summary.missing}} missing headers, {{webSurface.summary.weak}} weak.{{/if}}
 {{#if tlsData}}TLS: {{tlsData.summary.insecure_versions}} insecure protocols.{{/if}}
+{{#if cors_audit}}CORS Audit: Found {{cors_audit.summary.high_risk}} high risk misconfigurations.{{/if}}
 
-Identify significant risks. Focus on exposed admin panels, sensitive backup files, or unprotected API endpoints discovered during URL harvesting.
+Identify significant risks. Focus on exposed admin panels, sensitive backup files, unprotected API endpoints, and CORS misconfigurations.
 Provide a risk score 0-100 and a list of potential vulnerabilities with recommendations.`,
 });
 
