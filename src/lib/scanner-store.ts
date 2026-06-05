@@ -140,9 +140,15 @@ export function useScannerStore() {
     const interval = setInterval(() => {
       checkHealth();
       fetchGroups();
+      // Ensure all running groups are being polled
+      targetGroups.forEach(g => {
+        if (g.status === 'running' && !pollingRefs.current[g.id]) {
+          pollingRefs.current[g.id] = setInterval(() => pollStatus(g.id), 2000);
+        }
+      });
     }, 4000);
     return () => clearInterval(interval);
-  }, [checkHealth, fetchGroups]);
+  }, [checkHealth, fetchGroups, targetGroups, pollStatus]);
 
   const addTargetGroup = useCallback(async (name: string, hosts: string[], mode: ReconMode, modules: Record<ReconModuleType, boolean>, credentials?: Credential[]) => {
     if (!settings?.apiUrl) return;
