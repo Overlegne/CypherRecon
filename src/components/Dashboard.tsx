@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -536,7 +537,7 @@ export default function Dashboard() {
                                   AI Analysis Available
                                 </CardTitle>
                                 <CardDescription className="text-xs">
-                                  Generate a smart summary and risk assessment for this target based on current results.
+                                  Generate a smart summary and risk assessment for this target gebaseerd op de resultaten.
                                 </CardDescription>
                               </CardHeader>
                               <CardContent>
@@ -611,7 +612,7 @@ export default function Dashboard() {
                         <div className="space-y-2 max-w-sm">
                           <h3 className="text-xl font-bold">No AI Analysis Yet</h3>
                           <p className="text-sm text-muted-foreground">
-                            AI analysis is optional and manually triggered. Use it to prioritize vulnerabilities and get a strategic summary.
+                            AI analysis is optional and manually triggered. Use it to prioritize vulnerabilities.
                           </p>
                         </div>
                         <Button 
@@ -704,13 +705,20 @@ export default function Dashboard() {
                   </TabsContent>
 
                   <TabsContent value="snapshots" className="mt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {selectedChild.results?.screenshots?.map((url, i) => (
-                        <Card key={i} className="overflow-hidden bg-black/50 aspect-video relative">
-                          <Image src={url} alt={`Snapshot ${i + 1}`} fill className="object-cover" />
-                        </Card>
-                      ))}
-                    </div>
+                    {selectedChild.results?.screenshots?.length ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {selectedChild.results.screenshots.map((url, i) => (
+                          <Card key={i} className="overflow-hidden bg-black/50 aspect-video relative">
+                            <Image src={url} alt={`Snapshot ${i + 1}`} fill className="object-cover" />
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-20 flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+                        <Camera size={48} />
+                        <p>No snapshots captured yet.</p>
+                      </div>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="logs" className="mt-6">
