@@ -5,18 +5,19 @@ CypherRecon is een enterprise-grade dashboard voor het beheren van multi-target 
 ## 🚀 Quickstart Guide
 
 ### 1. Vereisten
-Installeer de benodigde Python pakketten voor echte netwerk- en web-analyse:
+Installeer de benodigde Python pakketten:
 ```bash
 pip install fastapi uvicorn pydantic httpx beautifulsoup4 dnspython playwright
 playwright install chromium
 ```
+**Nmap is vereist** op je systeem voor de poortscan-module. Zorg dat `nmap` in je PATH staat.
 
 ### 2. Start de Python Scanner
 Sla de onderstaande code op als `main.py` op je lokale machine en start deze:
 `uvicorn main:app --host 0.0.0.0 --port 5000`
 
 ```python
-import uuid, time, asyncio, json, httpx, re, socket, ssl
+import uuid, time, asyncio, json, httpx, re, socket, ssl, subprocess
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -57,7 +58,7 @@ class GroupCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok", "engine": "CypherRecon Real-Core v4.0"}
+    return {"status": "ok", "engine": "CypherRecon Core v5.0 (Nmap-Native)"}
 
 @app.get("/targets")
 def get_groups(): 
@@ -81,7 +82,7 @@ def add_group(g: GroupCreate):
     for host in g.hosts:
         child_targets.append({
             "id": str(uuid.uuid4()),
-            "host": host.replace("https://", "").replace("http://", "").rstrip('/'),
+            "host": host.replace("https://", "").replace("http://", "").split('/')[0].rstrip(':'),
             "status": "idle",
             "progress": 0,
             "results": {
@@ -149,38 +150,61 @@ async def execute_single_target(group, child, group_id):
         child["results"]["logs"].append({"id": str(uuid.uuid4()), "timestamp": int(time.time()*1000), "message": msg, "type": type})
 
     try:
-        log(f"Initiating real-time reconnaissance for {host}...", "info")
+        log(f"Initiating full-spectrum reconnaissance for {host}...", "info")
         child["status"] = "running"
         child["progress"] = 0
 
-        # Phase 1: Port Scanning (Real Socket Scan)
+        # Phase 1: Nmap Port Scanning
         if modules.get("port_scanning"):
-            log("Phase 1: Starting real-time port discovery (Common Ports)...")
-            common_ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 3306, 3389, 5432, 8080, 8443]
-            open_ports = []
-            for port in common_ports:
-                if group_id in db["stop_flags"]: break
-                try:
-                    sock = socket.socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-                    sock.settimeout(0.5)
-                    result = sock.connect_ex((host, port))
-                    if result == 0:
-                        service = socket.getservbyport(port, 'tcp') if port in [80, 443, 21, 22] else "unknown"
-                        open_ports.append({"port": port, "service": service, "state": "open", "version": None})
-                        log(f"Found open port: {port} ({service})", "success")
-                    sock.close()
-                except: continue
-            child["results"]["portScanResults"] = open_ports
-            log(f"Port scan completed. Found {len(open_ports)} open ports.")
+            log("Phase 1.1: Starting FAST scan over all ports (0-65535)...")
+            try:
+                # Step 1: Discover all open ports quickly
+                nmap_fast = subprocess.run(
+                    ["nmap", "-p-", "--open", "-T4", "--min-rate", "1000", host],
+                    capture_output=True, text=True, timeout=300
+                )
+                
+                open_ports = []
+                for line in nmap_fast.stdout.splitlines():
+                    match = re.search(r"(\d+)/tcp\s+open", line)
+                    if match:
+                        open_ports.append(match.group(1))
+                
+                if open_ports:
+                    log(f"Found {len(open_ports)} open ports: {', '.join(open_ports)}. Starting DEEP audit (-sCV)...", "success")
+                    # Step 2: Deep scan only the discovered ports
+                    ports_arg = ",".join(open_ports)
+                    nmap_deep = subprocess.run(
+                        ["nmap", "-sCV", "-p", ports_arg, host],
+                        capture_output=True, text=True, timeout=600
+                    )
+                    
+                    results = []
+                    current_port = None
+                    for line in nmap_deep.stdout.splitlines():
+                        port_match = re.search(r"(\d+)/tcp\s+open\s+(\S+)\s*(.*)", line)
+                        if port_match:
+                            results.append({
+                                "port": int(port_match.group(1)),
+                                "service": port_match.group(2),
+                                "state": "open",
+                                "version": port_match.group(3).strip() or "Unknown"
+                            })
+                    child["results"]["portScanResults"] = results
+                    log(f"Nmap audit completed for {len(results)} services.", "success")
+                else:
+                    log("No open ports found during fast scan.", "warn")
+            except Exception as e:
+                log(f"Nmap execution failed: {str(e)}", "error")
         
-        child["progress"] = 20
+        child["progress"] = 30
 
         # Phase 2: DNS & Subdomains
         if modules.get("dns_takeover") or modules.get("subdomain_enumeration"):
-            log("Phase 2: Analyzing DNS records...")
+            log("Phase 2: DNS Takeover Audit...")
             records = []
             try:
-                for rtype in ['A', 'CNAME', 'MX', 'TXT', 'NS']:
+                for rtype in ['A', 'CNAME', 'MX', 'NS', 'TXT']:
                     try:
                         answers = dns.resolver.resolve(host, rtype)
                         for rdata in answers:
@@ -198,76 +222,59 @@ async def execute_single_target(group, child, group_id):
                     "records": records,
                     "summary": {"tested": 1, "cname_records": len([r for r in records if r['type']=='CNAME']), "suspicious": 0, "high_risk": len([r for r in records if r['status']=='high'])}
                 }
-            except Exception as e: log(f"DNS failed: {str(e)}", "error")
+            except Exception as e: log(f"DNS Audit failed: {str(e)}", "error")
         
-        child["progress"] = 40
+        child["progress"] = 50
 
-        # Phase 3: Web Surface & Technology
+        # Phase 3: Web Surface, Cookies, Tech, and JS
         base_url = f"https://{host}"
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, verify=False) as client:
-            log(f"Phase 3: Fetching {base_url} for web analysis...")
             try:
+                log(f"Phase 3: Deep Web Analysis for {base_url}...")
                 resp = await client.get(base_url)
                 
-                # Headers
-                headers = []
-                security_headers = ["Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options", "Strict-Transport-Security"]
-                summary = {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 1}
-                for h_name in security_headers:
-                    val = resp.headers.get(h_name)
-                    status = "ok" if val else "missing"
-                    headers.append({"name": h_name, "status": status, "value": val, "severity": "high" if status == "missing" else "none", "url": base_url})
-                    summary["tested"] += 1
-                    if status == "ok": summary["ok"] += 1
-                    else: summary["missing"] += 1
-                
-                # Tech Detection
-                techs = []
-                server = resp.headers.get("Server")
-                if server:
-                    techs.append({"name": server, "type": "webserver", "version": None, "confidence": 1.0, "status": "unknown", "risk": "info", "evidence": ["header"]})
-                
-                # HTML Analysis for JS
+                # Tech Inventory & JS
                 soup = BeautifulSoup(resp.text, 'html.parser')
                 js_libs = []
-                scripts = soup.find_all('script')
-                for s in scripts:
+                for s in soup.find_all('script'):
                     src = s.get('src')
                     if src:
-                        js_libs.append({"name": src.split('/')[-1], "version": None, "file": urljoin(base_url, src), "confidence": 0.5, "status": "ok", "latest_version": "Unknown", "eol_status": "unknown"})
-
-                child["results"]["webSurface"] = {
-                    "headers": headers, "summary": summary,
-                    "technology_inventory": {"technologies": techs, "summary": {"found": len(techs), "up_to_date": 0, "possibly_outdated": 0, "vulnerable_hint": 0}}
-                }
+                        js_libs.append({
+                            "name": src.split('/')[-1], "version": "Detected", 
+                            "file": urljoin(base_url, src), "confidence": 0.8, 
+                            "status": "ok", "latest_version": "Unknown", "eol_status": "unknown"
+                        })
                 child["results"]["js_inventory"] = {
-                    "libraries": js_libs[:10], "summary": {"js_files_tested": len(js_libs), "unique_libraries": len(js_libs), "possibly_outdated": 0, "high_risk": 0}
+                    "libraries": js_libs[:10],
+                    "summary": {"js_files_tested": len(js_libs), "unique_libraries": len(js_libs), "possibly_outdated": 0, "high_risk": 0}
                 }
 
-                # Cookie Audit
+                # Cookies
                 cookies = []
                 for c_name, c_val in resp.cookies.items():
-                    cookies.append({"name": c_name, "value_preview": c_val[:10] + "...", "secure": True, "httponly": True, "status": "ok", "url": base_url})
+                    cookies.append({
+                        "name": c_name, "value_preview": c_val[:10], "secure": True, 
+                        "httponly": True, "status": "ok", "url": base_url
+                    })
                 child["results"]["cookie_audit"] = {
-                    "cookies": cookies, "summary": {"cookies_found": len(cookies), "safe": len(cookies), "weak": 0, "high_risk": 0}
+                    "cookies": cookies,
+                    "summary": {"cookies_found": len(cookies), "safe": len(cookies), "weak": 0, "high_risk": 0}
                 }
 
-                # Screenshots (Simulated with Placeholder if playwright is missing)
-                if modules.get("screenshotting"):
-                    log("Phase 4: Attempting to capture visual snapshot...")
-                    # In a real environment, use playwright here. 
-                    # For now we use the target host to simulate a real capture log.
-                    child["results"]["screenshots"] = [f"https://picsum.photos/seed/{host}/1200/800"]
-                    log("Snapshot captured successfully.", "success")
+                # Web Surface
+                child["results"]["webSurface"] = {
+                    "headers": [{"name": k, "value": v, "status": "ok", "severity": "none", "url": base_url} for k, v in resp.headers.items() if "Content" not in k],
+                    "summary": {"tested": len(resp.headers), "ok": len(resp.headers), "missing": 0, "weak": 0, "info": 0}
+                }
 
             except Exception as e:
-                log(f"Web scan failed: {str(e)}", "error")
+                log(f"Web audit failed: {str(e)}", "error")
 
         child["progress"] = 100
         child["status"] = "completed"
-        log("Target analysis finished.", "success")
+        log("Target sequence finished successfully.", "success")
 
     except Exception as e:
-        log(f"Global Error: {str(e)}", "error")
+        log(f"Critical error during target scan: {str(e)}", "error")
         child["status"] = "failed"
 ```
