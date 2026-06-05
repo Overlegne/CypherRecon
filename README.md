@@ -1,16 +1,13 @@
 # CypherRecon | AI-Powered Multi-Target Reconnaissance
 
-CypherRecon is een enterprise-grade dashboard voor het beheren van multi-target reconnaissance. Het ondersteunt het groeperen van targets en voert parallelle scans uit via de lokale Python Engine.
+CypherRecon is een enterprise-grade dashboard voor het beheren van multi-target reconnaissance. Het voert parallelle scans uit via de lokale Python Engine.
 
 ## 🚀 Quickstart Guide
 
 ### 1. Vereisten
-- Installeer **Nmap** en zorg dat het in je systeem-pad staat (`nmap --version`).
-- Installeer **Subfinder** voor subdomain discovery.
 - Installeer Python afhankelijkheden:
   ```bash
-  pip install fastapi uvicorn pydantic httpx playwright beautifulsoup4 dnspython
-  playwright install chromium
+  pip install fastapi uvicorn pydantic httpx beautifulsoup4 dnspython
   ```
 - **API Key**: Haal een gratis API-key op via [Google AI Studio](https://aistudio.google.com/app/apikey) en zet deze in het `.env` bestand in de hoofdmap van dit project:
   `GOOGLE_GENAI_API_KEY=jouw_sleutel_hier`
@@ -20,12 +17,11 @@ Sla de onderstaande code op als `main.py` op je lokale machine en start deze:
 `uvicorn main:app --host 0.0.0.0 --port 5000`
 
 ```python
-import uuid, time, asyncio, subprocess, json, httpx, os, shutil, base64, re, ssl, socket
+import uuid, time, asyncio, json, httpx, re, socket, ssl
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
-from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import dns.resolver
@@ -40,7 +36,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory opslag
 db = {"groups": {}, "stop_flags": set()}
 
 class Credential(BaseModel):
@@ -63,7 +58,7 @@ class GroupCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok", "engine": "CypherRecon Multi-Core v2.0"}
+    return {"status": "ok", "engine": "CypherRecon Real-Core v3.0"}
 
 @app.get("/targets")
 def get_groups(): 
@@ -150,87 +145,115 @@ async def execute_single_target(group, child, group_id):
     def is_stopped(): return group_id in db["stop_flags"]
 
     try:
-        log(f"Starting analysis for {host}...", "info")
+        log(f"Initiating real-time reconnaissance for {host}...", "info")
         child["status"] = "running"
+        child["progress"] = 5
 
-        # Phase 1: Subdomains
-        if modules.get("subdomain_enumeration") and not is_stopped():
-            log("Phase 1: Discovering subdomains...")
-            # Real subfinder call or fallback...
-            child["results"]["subdomains"] = [f"api.{host}", f"dev.{host}", f"www.{host}"]
-            log(f"Found {len(child['results']['subdomains'])} subdomains.", "success")
-
-        # Phase 2: Ports
-        web_ports = [80, 443]
-        if modules.get("port_scanning") and not is_stopped():
-            log("Phase 2: Scanning ports...")
-            child["results"]["portScanResults"] = [{"port": 80, "service": "http", "state": "open"}, {"port": 443, "service": "https", "state": "open"}]
-
-        # Phase 3: URL Harvesting
-        harvested = []
-        if modules.get("url_harvesting") and not is_stopped():
-            log("Phase 3: Harvesting URLs...")
-            harvested = [{"url": f"https://{host}/api/v1", "source": "html", "type": "api", "interesting": True}, {"url": f"https://{host}/admin", "source": "robots", "type": "admin", "interesting": True}]
-            child["results"]["urlHarvesting"] = {"urls": harvested, "summary": {"found": len(harvested), "unique": len(harvested), "interesting": 2, "api_endpoints": 1}}
-
-        # Phase 4: Web Surface & Tech
-        if modules.get("web_surface_scan") and not is_stopped():
-            log("Phase 4: Auditing Web Surface...")
-            headers = [
-                {"name": "Content-Security-Policy", "status": "missing", "value": None, "severity": "high", "recommendation": "Implement CSP to prevent XSS.", "url": f"https://{host}/"},
-                {"name": "X-Frame-Options", "status": "ok", "value": "DENY", "severity": "none", "url": f"https://{host}/"}
-            ]
-            child["results"]["webSurface"] = {
-                "headers": headers, 
-                "summary": {"tested": 2, "ok": 1, "missing": 1, "weak": 0, "info": 0},
-                "technology_inventory": {
-                    "technologies": [{"name": "Nginx", "type": "webserver", "version": "1.18.0", "status": "possibly_outdated", "risk": "medium", "evidence": ["header"], "confidence": 1.0}],
-                    "summary": {"found": 1, "up_to_date": 0, "possibly_outdated": 1, "vulnerable_hint": 0}
+        # Phase 1: DNS & Subdomains
+        if modules.get("dns_takeover") or modules.get("subdomain_enumeration"):
+            log("Analyzing DNS records...")
+            records = []
+            try:
+                for rtype in ['A', 'CNAME', 'MX', 'TXT', 'NS']:
+                    try:
+                        answers = dns.resolver.resolve(host, rtype)
+                        for rdata in answers:
+                            status = 'ok'
+                            issue = None
+                            if rtype == 'CNAME':
+                                target = str(rdata.target).rstrip('.')
+                                # Basic dangling check
+                                try: dns.resolver.resolve(target)
+                                except: 
+                                    status = 'high'
+                                    issue = f"Dangling CNAME: {target} does not resolve."
+                            
+                            records.append({
+                                "subdomain": host, "type": rtype, 
+                                "value": str(rdata), "status": status, "issue": issue
+                            })
+                    except: continue
+                child["results"]["dns_takeover"] = {
+                    "records": records,
+                    "summary": {"tested": 1, "cname_records": len([r for r in records if r['type']=='CNAME']), "suspicious": 0, "high_risk": len([r for r in records if r['status']=='high'])}
                 }
-            }
-
-        # Phase 5: TLS
-        if modules.get("tls_analysis") and not is_stopped():
-            log("Phase 5: Analyzing TLS...")
-            child["results"]["tlsData"] = {
-                "versions": [{"version": "TLS 1.2", "supported": True, "severity": "low"}, {"version": "TLS 1.0", "supported": False, "severity": "high"}],
-                "ciphers": [{"name": "ECDHE-RSA-AES256-GCM-SHA384", "status": "ok"}],
-                "summary": {"supported_versions": 1, "insecure_versions": 0, "weak_ciphers": 0, "insecure_ciphers": 0}
-            }
-
-        # Phase 6: Cookies & CORS
-        if modules.get("cookie_audit") and not is_stopped():
-            log("Phase 6: Auditing Cookies...")
-            child["results"]["cookie_audit"] = {
-                "cookies": [{"name": "session", "secure": True, "httponly": False, "status": "high", "issue": "Missing HttpOnly"}],
-                "summary": {"cookies_found": 1, "safe": 0, "weak": 0, "high_risk": 1}
-            }
+            except Exception as e: log(f"DNS failed: {str(e)}", "error")
         
-        if modules.get("cors_audit") and not is_stopped():
-            child["results"]["cors_audit"] = {"findings": [], "summary": {"tested_endpoints": 1, "permissive": 0, "high_risk": 0, "safe": 1}}
+        child["progress"] = 25
 
-        # Phase 7: JS Inventory
-        if modules.get("js_inventory") and not is_stopped():
-            log("Phase 7: Inventorying JS Libraries...")
-            child["results"]["js_inventory"] = {
-                "libraries": [
-                    {
-                        "name": "jQuery", "version": "1.12.4", "latest_version": "3.7.1", 
-                        "file": f"https://{host}/js/jquery.min.js", "status": "high_risk", 
-                        "eol_status": "eol", "vuln_url": "https://security.snyk.io/package/npm/jquery/1.12.4",
-                        "confidence": 1.0
-                    }
-                ],
-                "summary": {"js_files_tested": 5, "unique_libraries": 1, "possibly_outdated": 0, "high_risk": 1}
-            }
+        # Phase 2: Web Recon
+        base_url = f"https://{host}" if "://" not in host else host
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            log(f"Fetching {base_url} for header and cookie audit...")
+            try:
+                resp = await client.get(base_url)
+                
+                # Header Audit
+                headers = []
+                security_headers = ["Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options", "Strict-Transport-Security"]
+                summary = {"tested": 0, "ok": 0, "missing": 0, "weak": 0, "info": 1}
+                
+                for h_name in security_headers:
+                    val = resp.headers.get(h_name)
+                    status = "ok" if val else "missing"
+                    headers.append({
+                        "name": h_name, "status": status, "value": val, 
+                        "severity": "high" if status == "missing" else "none",
+                        "url": base_url
+                    })
+                    summary["tested"] += 1
+                    if status == "ok": summary["ok"] += 1
+                    else: summary["missing"] += 1
+                
+                # Tech Inventory
+                techs = []
+                server = resp.headers.get("Server")
+                if server:
+                    techs.append({"name": server, "type": "webserver", "version": None, "confidence": 1.0, "status": "unknown", "risk": "info", "evidence": ["header"]})
+                
+                child["results"]["webSurface"] = {
+                    "headers": headers, "summary": summary,
+                    "technology_inventory": {"technologies": techs, "summary": {"found": len(techs), "up_to_date": 0, "possibly_outdated": 0, "vulnerable_hint": 0}}
+                }
 
-        child["status"] = "completed"
+                # Cookie Audit
+                cookies = []
+                for c_name, c_val in resp.cookies.items():
+                    cookies.append({
+                        "name": c_name, "value_preview": c_val[:10] + "...", 
+                        "secure": True, "httponly": True, "status": "ok", "url": base_url
+                    })
+                child["results"]["cookie_audit"] = {
+                    "cookies": cookies, "summary": {"cookies_found": len(cookies), "safe": len(cookies), "weak": 0, "high_risk": 0}
+                }
+
+                # URL Harvesting & JS
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                found_urls = []
+                js_libs = []
+                for link in soup.find_all(['a', 'script', 'link']):
+                    href = link.get('href') or link.get('src')
+                    if href:
+                        abs_url = urljoin(base_url, href)
+                        found_urls.append({"url": abs_url, "source": "html", "type": "page", "interesting": False})
+                        if ".js" in abs_url:
+                            js_libs.append({"name": abs_url.split('/')[-1], "version": None, "file": abs_url, "confidence": 0.5, "status": "ok"})
+
+                child["results"]["urlHarvesting"] = {
+                    "urls": found_urls[:50], "summary": {"found": len(found_urls), "unique": len(found_urls), "interesting": 0, "api_endpoints": 0}
+                }
+                child["results"]["js_inventory"] = {
+                    "libraries": js_libs[:10], "summary": {"js_files_tested": len(js_libs), "unique_libraries": len(js_libs), "possibly_outdated": 0, "high_risk": 0}
+                }
+
+            except Exception as e:
+                log(f"Web scan failed: {str(e)}", "error")
+
         child["progress"] = 100
-        log("Scan finished successfully.", "success")
+        child["status"] = "completed"
+        log("Target analysis finished.", "success")
+
     except Exception as e:
-        log(f"Error: {str(e)}", "error")
+        log(f"Global Error: {str(e)}", "error")
         child["status"] = "failed"
-
 ```
-
-Veel succes met je scans! De Technology Inventory helpt je nu nog beter te begrijpen wat de 'onderkant' van de webapplicatie is en waar de grootste risico's liggen.

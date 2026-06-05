@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -105,7 +106,6 @@ export function useScannerStore() {
         ...child.results
       });
       
-      // Submit the analysis back to the engine so it persists
       await fetch(`${url}/targets/${groupId}/risk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -113,7 +113,6 @@ export function useScannerStore() {
         mode: 'cors'
       });
 
-      // Update local state immediately
       setTargetGroups(prev => prev.map(g => {
         if (g.id === groupId) {
           return {
@@ -140,13 +139,12 @@ export function useScannerStore() {
     const interval = setInterval(() => {
       checkHealth();
       fetchGroups();
-      // Ensure all running groups are being polled
       targetGroups.forEach(g => {
         if (g.status === 'running' && !pollingRefs.current[g.id]) {
           pollingRefs.current[g.id] = setInterval(() => pollStatus(g.id), 2000);
         }
       });
-    }, 4000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [checkHealth, fetchGroups, targetGroups, pollStatus]);
 
@@ -167,8 +165,6 @@ export function useScannerStore() {
         setTargetGroups(prev => [newGroup, ...prev]);
         setSelectedGroupId(newGroup.id);
         toast({ title: "Target Group Created", description: `Added ${name} with ${hosts.length} targets.` });
-      } else {
-        throw new Error("Backend rejected group creation");
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: "Backend connection failed." });
@@ -215,7 +211,7 @@ export function useScannerStore() {
 
       if (response.ok) {
         if (!pollingRefs.current[groupId]) {
-          pollingRefs.current[groupId] = setInterval(() => pollStatus(groupId), 2000);
+          pollingRefs.current[groupId] = setInterval(() => pollStatus(groupId), 1000);
         }
         fetchGroups();
         toast({ title: "Scan Initiated", description: "Sequence started on backend engine." });
