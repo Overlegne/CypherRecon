@@ -3,10 +3,11 @@
 import { JSLibraryInventoryData, JSLibrary } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Badge } from './ui/badge';
-import { ShieldCheck, ShieldAlert, AlertTriangle, FileCode, Code2, Globe, ExternalLink, Info } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, AlertTriangle, FileCode, Code2, Globe, ExternalLink, Info, Bug } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 export function JSLibraryInventoryView({ data }: { data: JSLibraryInventoryData }) {
   const getStatusBadge = (library: JSLibrary) => {
@@ -20,6 +21,12 @@ export function JSLibraryInventoryView({ data }: { data: JSLibraryInventoryData 
       default:
         return <Badge variant="outline" className="gap-1"><Info size={12} /> UNKNOWN</Badge>;
     }
+  };
+
+  const getEOLBadge = (status?: string) => {
+    if (status === 'eol') return <Badge variant="destructive" className="h-5 text-[10px]">EOL</Badge>;
+    if (status === 'supported') return <Badge className="h-5 text-[10px] bg-green-500/20 text-green-400 border-green-500/30">SUPPORTED</Badge>;
+    return <Badge variant="outline" className="h-5 text-[10px] opacity-40">UNKNOWN</Badge>;
   };
 
   const getConfidenceBadge = (score: number) => {
@@ -69,7 +76,7 @@ export function JSLibraryInventoryView({ data }: { data: JSLibraryInventoryData 
             JavaScript Framework & Library Inventory
           </CardTitle>
           <CardDescription>
-            Detection of frontend technologies and potential supply chain risks.
+            Detection of frontend technologies, version lifecycles, and security advisories.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -77,17 +84,16 @@ export function JSLibraryInventoryView({ data }: { data: JSLibraryInventoryData 
             <TableHeader className="bg-muted/30">
               <TableRow>
                 <TableHead>Library</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>Source Asset</TableHead>
-                <TableHead>Match</TableHead>
+                <TableHead>Current / Latest</TableHead>
+                <TableHead>Lifecycle</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">Intelligence</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.libraries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground italic">
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground italic">
                     No JavaScript libraries identified during analysis.
                   </TableCell>
                 </TableRow>
@@ -95,29 +101,54 @@ export function JSLibraryInventoryView({ data }: { data: JSLibraryInventoryData 
                 data.libraries.map((lib, idx) => (
                   <TableRow key={idx} className={cn("group hover:bg-muted/20", lib.status === 'high_risk' && "bg-destructive/5")}>
                     <TableCell>
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <Code2 size={14} className="text-primary" />
+                          <span className="font-bold text-sm">{lib.name}</span>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[200px] mt-0.5" title={lib.file}>
+                          {lib.file.split('/').pop()}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
-                        <Code2 size={14} className="text-primary" />
-                        <span className="font-bold text-sm">{lib.name}</span>
+                        <span className="font-code text-xs bg-secondary px-1.5 py-0.5 rounded">
+                          {lib.version || "???"}
+                        </span>
+                        <span className="text-muted-foreground">/</span>
+                        <span className="text-[10px] text-primary/80 font-bold">
+                          {lib.latest_version || "Unknown"}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="font-code text-xs bg-secondary px-1.5 py-0.5 rounded">
-                        {lib.version || "Unknown"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="max-w-[250px]">
-                      <div className="font-code text-[11px] truncate text-muted-foreground" title={lib.file}>
-                        {lib.file.split('/').pop()}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {getConfidenceBadge(lib.confidence)}
+                      {getEOLBadge(lib.eol_status)}
                     </TableCell>
                     <TableCell>{getStatusBadge(lib)}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => window.open(lib.file, '_blank')}>
-                        <ExternalLink size={12} />
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        {lib.vuln_url && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-destructive hover:bg-destructive/10" 
+                                  onClick={() => window.open(lib.vuln_url, '_blank')}
+                                >
+                                  <Bug size={14} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>View Snyk Advisories</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-40 hover:opacity-100" onClick={() => window.open(lib.file, '_blank')}>
+                          <ExternalLink size={14} />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -134,8 +165,8 @@ export function JSLibraryInventoryView({ data }: { data: JSLibraryInventoryData 
           <div className="space-y-1">
             <h4 className="font-bold text-sm text-yellow-500 uppercase tracking-wide">Supply Chain Hardening Recommended</h4>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Verouderde JavaScript libraries zijn een van de meest voorkomende entry-points voor aanvallers via bekende CVE's (Client-side vulnerabilities). 
-              <strong> Advies:</strong> Update de gemarkeerde libraries naar de nieuwste stabiele versie en overweeg het gebruik van Subresource Integrity (SRI) voor externe scripts.
+              Verouderde JavaScript libraries zijn een van de meest voorkomende entry-points voor aanvallers via bekende CVE's. 
+              <strong> Advies:</strong> Update de gemarkeerde libraries naar de nieuwste stabiele versie en overweeg het gebruik van Subresource Integrity (SRI).
             </p>
           </div>
         </div>

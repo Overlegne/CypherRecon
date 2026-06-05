@@ -201,6 +201,9 @@ export interface JSLibrary {
   file: string;
   confidence: number;
   status: 'ok' | 'unknown' | 'possibly_outdated' | 'high_risk';
+  latest_version?: string;
+  eol_status?: 'supported' | 'eol' | 'unknown';
+  vuln_url?: string;
 }
 
 export interface JSLibraryInventoryData {

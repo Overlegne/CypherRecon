@@ -80,71 +80,70 @@ export function WebSurfaceView({ data }: { data: WebSurfaceData }) {
 
           <div className="space-y-8">
             {urls.map((url, idx) => (
-              <Card key={idx} className="border-border/60">
-                <CardHeader className="pb-3 border-b border-border/40 bg-secondary/10">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <LinkIcon size={18} className="text-primary" />
-                    <span className="font-code text-sm break-all">{url}</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Analysis for endpoint security posture.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/30">
-                        <TableHead className="w-[250px]">Security Header</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Value</TableHead>
-                        <TableHead className="text-right">Risk Level</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {groupedHeaders[url].map((header, hIdx) => (
-                        <TableRow key={hIdx} className="group hover:bg-muted/20">
-                          <TableCell className="font-medium text-sm">{header.name}</TableCell>
-                          <TableCell>{getStatusBadge(header.status)}</TableCell>
-                          <TableCell className="max-w-[300px]">
-                            <div className="font-code text-[11px] truncate text-muted-foreground" title={header.value || ''}>
-                              {header.value || <span className="italic opacity-30">Not Set</span>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className={`text-[10px] uppercase font-bold ${getSeverityColor(header.severity)}`}>
-                              {header.severity !== 'none' ? header.severity : '-'}
-                            </span>
-                          </TableCell>
+              <div key={idx} className="space-y-6">
+                <Card className="border-border/60">
+                  <CardHeader className="pb-3 border-b border-border/40 bg-secondary/10">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <LinkIcon size={18} className="text-primary" />
+                      <span className="font-code text-sm break-all">{url}</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Security header posture for this endpoint.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/30">
+                          <TableHead className="w-[250px]">Security Header</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Value</TableHead>
+                          <TableHead className="text-right">Risk Level</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {groupedHeaders[url].map((header, hIdx) => (
+                          <TableRow key={hIdx} className="group hover:bg-muted/20">
+                            <TableCell className="font-medium text-sm">{header.name}</TableCell>
+                            <TableCell>{getStatusBadge(header.status)}</TableCell>
+                            <TableCell className="max-w-[300px]">
+                              <div className="font-code text-[11px] truncate text-muted-foreground" title={header.value || ''}>
+                                {header.value || <span className="italic opacity-30">Not Set</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className={`text-[10px] uppercase font-bold ${getSeverityColor(header.severity)}`}>
+                                {header.severity !== 'none' ? header.severity : '-'}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                {/* Local Recommendations for this URL */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {groupedHeaders[url]
+                    .filter(h => h.status !== 'ok' && h.status !== 'info')
+                    .map((h, i) => (
+                      <div key={i} className="p-4 rounded-xl border border-border bg-card/50 flex gap-4 transition-colors hover:border-primary/20">
+                        <div className={`mt-1 shrink-0 ${getSeverityColor(h.severity)}`}>
+                          <ShieldAlert size={20} />
+                        </div>
+                        <div className="space-y-1 overflow-hidden">
+                          <h4 className="font-bold text-sm truncate">{h.name}</h4>
+                          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                            {h.recommendation || 'Essential security header missing or misconfigured.'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
             ))}
           </div>
-
-          {data.summary.missing + data.summary.weak > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="col-span-full">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Risk Mitigation Recommendations</h3>
-              </div>
-              {data.headers.filter(h => h.status !== 'ok' && h.status !== 'info').slice(0, 8).map((h, i) => (
-                <div key={i} className="p-4 rounded-xl border border-border bg-card/50 flex gap-4 transition-colors hover:border-primary/20">
-                  <div className={`mt-1 shrink-0 ${getSeverityColor(h.severity)}`}>
-                    <ShieldAlert size={20} />
-                  </div>
-                  <div className="space-y-1 overflow-hidden">
-                    <h4 className="font-bold text-sm truncate">{h.name}</h4>
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                      {h.recommendation || 'This security header is essential for protecting the application from common web attacks like XSS, Clickjacking, or MIME sniffing.'}
-                    </p>
-                    {h.url && <p className="text-[10px] text-primary/60 truncate italic mt-1">Source: {h.url}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </TabsContent>
 
         <TabsContent value="inventory" className="mt-6">
