@@ -17,7 +17,7 @@ Sla de onderstaande code op als `main.py` op je lokale machine en start deze:
 `uvicorn main:app --host 0.0.0.0 --port 5000`
 
 ```python
-import uuid, time, asyncio, json, httpx, re, socket, ssl, subprocess
+import uuid, time, asyncio, json, httpx, re, socket, ssl
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -58,7 +58,7 @@ class GroupCreate(BaseModel):
 
 @app.get("/health")
 def health(): 
-    return {"status": "ok", "engine": "CypherRecon Core v5.0 (Nmap-Native)"}
+    return {"status": "ok", "engine": "CypherRecon Core v5.1 (Async-Nmap)"}
 
 @app.get("/targets")
 def get_groups(): 
@@ -104,7 +104,7 @@ def add_group(g: GroupCreate):
     return group
 
 @app.post("/targets/{id}/scan")
-def run_group_scan(id: str, background_tasks: BackgroundTasks):
+async def run_group_scan(id: str, background_tasks: BackgroundTasks):
     if id in db["groups"]:
         if id in db["stop_flags"]: db["stop_flags"].remove(id)
         group = db["groups"][id]
@@ -154,18 +154,21 @@ async def execute_single_target(group, child, group_id):
         child["status"] = "running"
         child["progress"] = 0
 
-        # Phase 1: Nmap Port Scanning
+        # Phase 1: Nmap Port Scanning (ASYNC)
         if modules.get("port_scanning"):
             log("Phase 1.1: Starting FAST scan over all ports (0-65535)...")
             try:
                 # Step 1: Discover all open ports quickly
-                nmap_fast = subprocess.run(
-                    ["nmap", "-p-", "--open", "-T4", "--min-rate", "1000", host],
-                    capture_output=True, text=True, timeout=300
+                process_fast = await asyncio.create_subprocess_exec(
+                    "nmap", "-p-", "--open", "-T4", "--min-rate", "1000", host,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
+                stdout, stderr = await process_fast.communicate()
+                fast_output = stdout.decode()
                 
                 open_ports = []
-                for line in nmap_fast.stdout.splitlines():
+                for line in fast_output.splitlines():
                     match = re.search(r"(\d+)/tcp\s+open", line)
                     if match:
                         open_ports.append(match.group(1))
@@ -174,14 +177,16 @@ async def execute_single_target(group, child, group_id):
                     log(f"Found {len(open_ports)} open ports: {', '.join(open_ports)}. Starting DEEP audit (-sCV)...", "success")
                     # Step 2: Deep scan only the discovered ports
                     ports_arg = ",".join(open_ports)
-                    nmap_deep = subprocess.run(
-                        ["nmap", "-sCV", "-p", ports_arg, host],
-                        capture_output=True, text=True, timeout=600
+                    process_deep = await asyncio.create_subprocess_exec(
+                        "nmap", "-sCV", "-p", ports_arg, host,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
                     )
+                    stdout_deep, stderr_deep = await process_deep.communicate()
+                    deep_output = stdout_deep.decode()
                     
                     results = []
-                    current_port = None
-                    for line in nmap_deep.stdout.splitlines():
+                    for line in deep_output.splitlines():
                         port_match = re.search(r"(\d+)/tcp\s+open\s+(\S+)\s*(.*)", line)
                         if port_match:
                             results.append({
@@ -199,20 +204,22 @@ async def execute_single_target(group, child, group_id):
         
         child["progress"] = 30
 
-        # Phase 2: DNS & Subdomains
+        # Phase 2: DNS & Subdomains (ASYNC via loop.run_in_executor)
         if modules.get("dns_takeover") or modules.get("subdomain_enumeration"):
             log("Phase 2: DNS Takeover Audit...")
             records = []
+            loop = asyncio.get_event_loop()
             try:
                 for rtype in ['A', 'CNAME', 'MX', 'NS', 'TXT']:
                     try:
-                        answers = dns.resolver.resolve(host, rtype)
+                        # dns.resolver.resolve is blocking, we wrap it
+                        answers = await loop.run_in_executor(None, dns.resolver.resolve, host, rtype)
                         for rdata in answers:
                             val = str(rdata).rstrip('.')
                             status = 'ok'
                             issue = None
                             if rtype == 'CNAME':
-                                try: dns.resolver.resolve(val)
+                                try: await loop.run_in_executor(None, dns.resolver.resolve, val)
                                 except: 
                                     status = 'high'
                                     issue = f"Dangling CNAME: {val} does not resolve."

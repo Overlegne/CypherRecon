@@ -14,6 +14,7 @@ export function useScannerStore() {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const { settings } = useSettingsStore();
   const pollingRefs = useRef<Record<string, NodeJS.Timeout>>({});
+  const lastHealthCheck = useRef<boolean>(false);
 
   const checkHealth = useCallback(async () => {
     if (!settings?.apiUrl) return;
@@ -21,7 +22,7 @@ export function useScannerStore() {
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       
       const res = await fetch(`${url}/health`, { 
         signal: controller.signal,
@@ -33,18 +34,20 @@ export function useScannerStore() {
       clearTimeout(timeoutId);
       if (res.ok) {
         setIsBackendConnected(true);
+        lastHealthCheck.current = true;
       } else {
         setIsBackendConnected(false);
+        lastHealthCheck.current = false;
       }
     } catch (e) {
       setIsBackendConnected(false);
+      lastHealthCheck.current = false;
     }
   }, [settings?.apiUrl]);
 
   const fetchGroups = useCallback(async () => {
-    if (!settings?.apiUrl) return;
+    if (!settings?.apiUrl || !lastHealthCheck.current) return;
     const url = settings.apiUrl.replace(/\/$/, "");
-    if (!url) return;
     try {
       const response = await fetch(`${url}/targets`, { 
         cache: 'no-store',
@@ -60,9 +63,8 @@ export function useScannerStore() {
   }, [settings?.apiUrl]);
 
   const pollStatus = useCallback(async (groupId: string) => {
-    if (!settings?.apiUrl) return;
+    if (!settings?.apiUrl || !lastHealthCheck.current) return;
     const url = settings.apiUrl.replace(/\/$/, "");
-    if (!url) return;
     try {
       const response = await fetch(`${url}/targets/${groupId}`, { 
         cache: 'no-store',
@@ -81,7 +83,8 @@ export function useScannerStore() {
         }
       }
     } catch (e) {
-      console.warn("Polling error:", e);
+      // Don't stop polling on single error, backend might be busy
+      console.warn("Polling interval warning:", e);
     }
   }, [settings?.apiUrl, fetchGroups]);
 
@@ -138,20 +141,25 @@ export function useScannerStore() {
     checkHealth();
     const interval = setInterval(() => {
       checkHealth();
-      fetchGroups();
-      targetGroups.forEach(g => {
-        if (g.status === 'running' && !pollingRefs.current[g.id]) {
-          pollingRefs.current[g.id] = setInterval(() => pollStatus(g.id), 2000);
-        }
-      });
-    }, 3000);
+      if (lastHealthCheck.current) {
+        fetchGroups();
+      }
+    }, 4000);
     return () => clearInterval(interval);
-  }, [checkHealth, fetchGroups, targetGroups, pollStatus]);
+  }, [checkHealth, fetchGroups]);
+
+  // Handle active polls separate from health check
+  useEffect(() => {
+    targetGroups.forEach(g => {
+      if (g.status === 'running' && !pollingRefs.current[g.id]) {
+        pollingRefs.current[g.id] = setInterval(() => pollStatus(g.id), 2000);
+      }
+    });
+  }, [targetGroups, pollStatus]);
 
   const addTargetGroup = useCallback(async (name: string, hosts: string[], mode: ReconMode, modules: Record<ReconModuleType, boolean>, credentials?: Credential[]) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
-    if (!url) return;
     try {
       const response = await fetch(`${url}/targets`, {
         method: 'POST',
@@ -174,7 +182,6 @@ export function useScannerStore() {
   const deleteTargetGroup = useCallback(async (id: string) => {
     if (!settings?.apiUrl) return;
     const url = settings.apiUrl.replace(/\/$/, "");
-    if (!url) return;
     try {
       const response = await fetch(`${url}/targets/${id}`, { 
         method: 'DELETE',
@@ -211,7 +218,7 @@ export function useScannerStore() {
 
       if (response.ok) {
         if (!pollingRefs.current[groupId]) {
-          pollingRefs.current[groupId] = setInterval(() => pollStatus(groupId), 1000);
+          pollingRefs.current[groupId] = setInterval(() => pollStatus(groupId), 2000);
         }
         fetchGroups();
         toast({ title: "Scan Initiated", description: "Sequence started on backend engine." });
